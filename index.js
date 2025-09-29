@@ -50,9 +50,10 @@ app.use(compression());
 
 // Enable CORS with specific options
 const allowedOrigins = [
-  "http://localhost:3000", // Local development
-  "https://ats-orcin.vercel.app", // Production frontend
-  "https://ats-software-frontend.vercel.app", // Alternative production frontend
+  'http://localhost:3000',  // Local development
+  'https://ats-orcin.vercel.app',  // Production frontend
+  'https://ats-software-frontend.vercel.app',  // Alternative production frontend
+  'https://cms-organization.vercel.app'  // Current frontend domain
 ];
 
 // Use environment variable for additional origins if needed
