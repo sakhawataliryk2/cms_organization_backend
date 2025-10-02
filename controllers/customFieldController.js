@@ -173,35 +173,118 @@ class CustomFieldController {
             const { id } = req.params;
             const updateData = req.body;
 
-            console.log(`Update request for custom field ${id}:`, updateData);
 
-            if (!id || isNaN(parseInt(id))) {
+            // 1. Validate ID parameter
+            if (!id || !Number.isInteger(Number(id)) || Number(id) <= 0) {
                 return res.status(400).json({
                     success: false,
-                    message: 'Invalid custom field ID'
+                    message: 'Invalid custom field ID. ID must be a positive integer.'
                 });
             }
 
-            // Validate field name format if it's being updated
-            if (updateData.fieldName && !/^[a-zA-Z][a-zA-Z0-9_]*$/.test(updateData.fieldName)) {
+            // 2. Validate request body
+            if (!updateData || Object.keys(updateData).length === 0) {
                 return res.status(400).json({
                     success: false,
-                    message: 'Field name must start with a letter and contain only letters, numbers, and underscores'
+                    message: 'No update data provided'
                 });
             }
 
-            // Convert boolean values properly
-            if (updateData.isRequired !== undefined) {
-                updateData.isRequired = Boolean(updateData.isRequired);
-            }
-            if (updateData.isHidden !== undefined) {
-                updateData.isHidden = Boolean(updateData.isHidden);
+            // 3. Validate field name format if it's being updated
+            if (updateData.fieldName !== undefined) {
+                if (!updateData.fieldName || typeof updateData.fieldName !== 'string') {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Field name must be a non-empty string'
+                    });
+                }
+                if (!/^[a-zA-Z][a-zA-Z0-9_]*$/.test(updateData.fieldName)) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Field name must start with a letter and contain only letters, numbers, and underscores'
+                    });
+                }
             }
 
-            // Get user ID from auth middleware
-            const userId = req.user.id;
+            // 4. Validate field label if it's being updated
+            if (updateData.fieldLabel !== undefined) {
+                if (!updateData.fieldLabel || typeof updateData.fieldLabel !== 'string' || updateData.fieldLabel.trim().length === 0) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Field label must be a non-empty string'
+                    });
+                }
+            }
 
-            const customField = await this.customFieldModel.update(id, updateData, userId);
+            // 5. Validate field type if it's being updated
+            const validFieldTypes = ['text', 'email', 'phone', 'number', 'date', 'textarea', 'select', 'checkbox', 'radio', 'url', 'file'];
+            if (updateData.fieldType !== undefined) {
+                if (!validFieldTypes.includes(updateData.fieldType)) {
+                    return res.status(400).json({
+                        success: false,
+                        message: `Invalid field type. Must be one of: ${validFieldTypes.join(', ')}`
+                    });
+                }
+            }
+
+            // 6. Validate sort order if it's being updated
+            if (updateData.sortOrder !== undefined) {
+                if (!Number.isInteger(Number(updateData.sortOrder)) || Number(updateData.sortOrder) < 0) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Sort order must be a non-negative integer'
+                    });
+                }
+            }
+
+            // 7. Validate options for select/radio fields
+            if (updateData.options !== undefined && updateData.options !== null) {
+                if (!Array.isArray(updateData.options)) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Options must be an array'
+                    });
+                }
+                if (updateData.options.some(option => typeof option !== 'string' || option.trim().length === 0)) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'All options must be non-empty strings'
+                    });
+                }
+            }
+
+            // 8. Sanitize and convert boolean values properly
+            const sanitizedData = { ...updateData };
+            
+            if (sanitizedData.isRequired !== undefined) {
+                sanitizedData.isRequired = Boolean(sanitizedData.isRequired);
+            }
+            if (sanitizedData.isHidden !== undefined) {
+                sanitizedData.isHidden = Boolean(sanitizedData.isHidden);
+            }
+
+            // 9. Sanitize string fields
+            if (sanitizedData.fieldLabel !== undefined) {
+                sanitizedData.fieldLabel = sanitizedData.fieldLabel.trim();
+            }
+            if (sanitizedData.placeholder !== undefined && sanitizedData.placeholder !== null) {
+                sanitizedData.placeholder = sanitizedData.placeholder.trim() || null;
+            }
+            if (sanitizedData.defaultValue !== undefined && sanitizedData.defaultValue !== null) {
+                sanitizedData.defaultValue = sanitizedData.defaultValue.trim() || null;
+            }
+
+            // 10. Get user ID from auth middleware
+            const userId = req.user?.id;
+            if (!userId) {
+                return res.status(401).json({
+                    success: false,
+                    message: 'User authentication required'
+                });
+            }
+
+            // 11. Perform the update
+            const customField = await this.customFieldModel.update(id, sanitizedData, userId);
 
             if (!customField) {
                 return res.status(404).json({
@@ -215,10 +298,11 @@ class CustomFieldController {
                 message: 'Custom field updated successfully',
                 customField
             });
+
         } catch (error) {
             console.error('Error updating custom field:', error);
 
-            // Handle unique constraint violation
+            // Handle specific database errors
             if (error.code === '23505') {
                 return res.status(409).json({
                     success: false,
@@ -226,10 +310,33 @@ class CustomFieldController {
                 });
             }
 
+            if (error.code === '23503') {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Referenced user or entity does not exist'
+                });
+            }
+
+            if (error.code === '23514') {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Data validation constraint violation'
+                });
+            }
+
+            // Handle custom field not found error from model
+            if (error.message === 'Custom field definition not found') {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Custom field not found'
+                });
+            }
+
+            // Generic error response
             res.status(500).json({
                 success: false,
                 message: 'An error occurred while updating the custom field',
-                error: process.env.NODE_ENV === 'production' ? undefined : error.message
+                error: process.env.NODE_ENV === 'development' ? error.message : undefined
             });
         }
     }

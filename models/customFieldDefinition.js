@@ -155,6 +155,18 @@ class CustomFieldDefinition {
 
     // Update a custom field definition with enhanced history tracking
     async update(id, updateData, userId) {
+        if (!id || !Number.isInteger(Number(id)) || Number(id) <= 0) {
+            throw new Error('Invalid custom field ID');
+        }
+
+        if (!updateData || Object.keys(updateData).length === 0) {
+            throw new Error('No update data provided');
+        }
+
+        if (!userId || !Number.isInteger(Number(userId)) || Number(userId) <= 0) {
+            throw new Error('Invalid user ID');
+        }
+
         const client = await this.pool.connect();
         try {
             await client.query('BEGIN');
@@ -169,11 +181,14 @@ class CustomFieldDefinition {
 
             const oldValues = currentFieldResult.rows[0];
 
+            // Build the update query dynamically
             const updateFields = [];
             const queryParams = [];
             let paramCount = 1;
 
+            // Field mapping from frontend to database
             const fieldMapping = {
+                fieldName: 'field_name',
                 fieldLabel: 'field_label',
                 fieldType: 'field_type',
                 isRequired: 'is_required',
@@ -183,63 +198,83 @@ class CustomFieldDefinition {
                 defaultValue: 'default_value'
             };
 
-            // Handle options and validation rules separately
-            if (updateData.options !== undefined) {
-                updateFields.push(`options = ${paramCount}`);
-                queryParams.push(updateData.options ? JSON.stringify(updateData.options) : null);
-                paramCount++;
-            }
-
-            if (updateData.validationRules !== undefined) {
-                updateFields.push(`validation_rules = ${paramCount}`);
-                queryParams.push(updateData.validationRules ? JSON.stringify(updateData.validationRules) : null);
-                paramCount++;
-            }
-
-            // Process other fields
+            // Process regular fields
             for (const [key, value] of Object.entries(updateData)) {
-                if (key !== 'options' && key !== 'validationRules' && fieldMapping[key] && value !== undefined) {
-                    updateFields.push(`${fieldMapping[key]} = ${paramCount}`);
+                if (fieldMapping[key] && value !== undefined) {
+                    updateFields.push(`${fieldMapping[key]} = $${paramCount}`);
                     queryParams.push(value);
                     paramCount++;
                 }
             }
 
+            // Handle JSON fields separately
+            if (updateData.options !== undefined) {
+                updateFields.push(`options = $${paramCount}`);
+                queryParams.push(updateData.options ? JSON.stringify(updateData.options) : null);
+                paramCount++;
+            }
+
+            if (updateData.validationRules !== undefined) {
+                updateFields.push(`validation_rules = $${paramCount}`);
+                queryParams.push(updateData.validationRules ? JSON.stringify(updateData.validationRules) : null);
+                paramCount++;
+            }
+
             // Always update the updated_by and updated_at fields
-            updateFields.push(`updated_by = ${paramCount}`);
+            updateFields.push(`updated_by = $${paramCount}`);
             queryParams.push(userId);
             paramCount++;
 
             updateFields.push(`updated_at = NOW()`);
 
-            if (updateFields.length === 2) { // Only updated_by and updated_at
+            // If no fields to update (only updated_by and updated_at), just return current data
+            if (updateFields.length === 2) {
                 await client.query('ROLLBACK');
                 return await this.getById(id);
             }
 
+            // Build and execute the update query
             const updateQuery = `
                 UPDATE custom_field_definitions 
                 SET ${updateFields.join(', ')}
-                WHERE id = ${paramCount}
+                WHERE id = $${paramCount}
                 RETURNING *
             `;
 
             queryParams.push(id);
+            
+            console.log('Update query:', updateQuery);
+            console.log('Query params:', queryParams);
+
             const result = await client.query(updateQuery, queryParams);
+            
+            if (result.rows.length === 0) {
+                throw new Error('Custom field definition not found');
+            }
+
             const newValues = result.rows[0];
 
-            // Determine what fields changed
+            // Determine what fields changed for history tracking
             const changedFields = [];
-            const fieldKeys = Object.keys(fieldMapping);
-
-            for (const key of fieldKeys) {
-                const dbKey = fieldMapping[key];
-                if (updateData[key] !== undefined && oldValues[dbKey] !== newValues[dbKey]) {
-                    changedFields.push(dbKey);
+            
+            // Check regular fields
+            for (const [key, dbKey] of Object.entries(fieldMapping)) {
+                if (updateData[key] !== undefined) {
+                    const oldValue = oldValues[dbKey];
+                    const newValue = newValues[dbKey];
+                    
+                    // Handle different data types for comparison
+                    if (typeof oldValue === 'boolean' && typeof newValue === 'boolean') {
+                        if (oldValue !== newValue) {
+                            changedFields.push(dbKey);
+                        }
+                    } else if (oldValue !== newValue) {
+                        changedFields.push(dbKey);
+                    }
                 }
             }
 
-            // Check for options and validation rules changes
+            // Check JSON fields
             if (updateData.options !== undefined) {
                 const oldOptions = oldValues.options ? JSON.stringify(oldValues.options) : null;
                 const newOptions = newValues.options ? JSON.stringify(newValues.options) : null;
@@ -256,13 +291,17 @@ class CustomFieldDefinition {
                 }
             }
 
-            // Add history entry for the update
-            await this.addHistoryEntry(client, id, 'UPDATE', oldValues, newValues, userId, changedFields);
+            // Add history entry for the update (only if there were actual changes)
+            if (changedFields.length > 0) {
+                await this.addHistoryEntry(client, id, 'UPDATE', oldValues, newValues, userId, changedFields);
+            }
 
             await client.query('COMMIT');
             return newValues;
+
         } catch (error) {
             await client.query('ROLLBACK');
+            console.error('Error in custom field update:', error);
             throw error;
         } finally {
             client.release();
