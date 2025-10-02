@@ -6,6 +6,16 @@ require("dotenv").config();
 const helmet = require("helmet");
 const compression = require("compression");
 
+// Check for required environment variables
+const requiredEnvVars = ['JWT_SECRET', 'DB_HOST', 'DB_USER', 'DB_PASSWORD', 'DB_DATABASE'];
+const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
+
+if (missingEnvVars.length > 0) {
+  console.error('❌ Missing required environment variables:', missingEnvVars.join(', '));
+  console.error('Please ensure all required environment variables are set in your Vercel deployment.');
+  process.exit(1);
+}
+
 // Import custom modules
 const { createPool, testDatabaseConnection } = require("./config/database");
 const AuthController = require("./controllers/authController");
@@ -50,9 +60,10 @@ app.use(compression());
 
 // Enable CORS with specific options
 const allowedOrigins = [
-  "http://localhost:3000", // Local development
-  "https://ats-orcin.vercel.app", // Production frontend
-  "https://ats-software-frontend.vercel.app", // Alternative production frontend
+  'http://localhost:3000',  // Local development
+  'https://ats-orcin.vercel.app',  // Production frontend
+  'https://ats-software-frontend.vercel.app',  // Alternative production frontend
+  'https://cms-organization.vercel.app'  // Current frontend domain
 ];
 
 // Use environment variable for additional origins if needed
