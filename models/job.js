@@ -16,7 +16,7 @@ class Job {
             await client.query(`
                 CREATE TABLE IF NOT EXISTS jobs (
                 id SERIAL PRIMARY KEY,
-                job_title VARCHAR(255) NOT NULL,
+                job_title VARCHAR(255),
                 category VARCHAR(100),
                 organization_id INTEGER REFERENCES organizations(id),
                 hiring_manager VARCHAR(255),

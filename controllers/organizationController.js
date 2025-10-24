@@ -80,7 +80,8 @@ class OrganizationController {
             num_employees,
             num_offices,
             contact_phone,
-            address
+            address, 
+            custom_fields
         });
 
         // Basic validation - only name is required
@@ -113,7 +114,7 @@ class OrganizationController {
                 contact_phone,
                 address,
                 userId,
-                customFields: custom_fields // ADDED: Pass custom fields to model
+                customFields: custom_fields || {}, // ADDED: Pass custom fields to model
             });
 
             // Log the created organization for debugging
@@ -225,6 +226,7 @@ class OrganizationController {
             const organizations = await this.organizationModel.getAll(
                 ['admin', 'owner'].includes(userRole) ? null : userId
             );
+           
 
             res.status(200).json({
                 success: true,
@@ -255,7 +257,7 @@ class OrganizationController {
                 id,
                 ['admin', 'owner'].includes(userRole) ? null : userId
             );
-
+            
             if (!organization) {
                 return res.status(404).json({
                     success: false,

@@ -25,7 +25,7 @@ class Organization {
             await client.query(`
                 CREATE TABLE IF NOT EXISTS organizations (
                     id SERIAL PRIMARY KEY,
-                    name VARCHAR(255) NOT NULL,
+                    name VARCHAR(255),
                     nicknames VARCHAR(255),
                     parent_organization VARCHAR(255),
                     website VARCHAR(255),
@@ -105,10 +105,12 @@ class Organization {
             contact_phone,
             address,
             userId,
-            customFields = {}
+            custom_fields = {}   // <-- receive same name jo payload se aata hai
         } = organizationData;
 
         console.log("Organization model - create function input:", JSON.stringify(organizationData, null, 2));
+        console.log("Custom fields received in model:", custom_fields);
+        console.log("Custom fields type in model:", typeof custom_fields);
 
         const client = await this.pool.connect();
 
@@ -117,20 +119,32 @@ class Organization {
             await client.query('BEGIN');
 
             // Properly handle custom fields
-            let customFieldsJson = '{}';
-            if (customFields) {
-                if (typeof customFields === 'string') {
-                    try {
-                        JSON.parse(customFields);
-                        customFieldsJson = customFields;
-                    } catch (e) {
-                        console.log("Invalid JSON string in customFields, using empty object");
-                        customFieldsJson = '{}';
-                    }
-                } else if (typeof customFields === 'object') {
-                    customFieldsJson = JSON.stringify(customFields);
-                }
+            // let customFieldsJson = '{}';
+            // if (custom_fields) {
+            //     if (typeof custom_fields === 'string') {
+            //         try {
+            //             JSON.parse(custom_fields);
+            //             customFieldsJson = custom_fields;
+            //         } catch (e) {
+            //             console.log("Invalid JSON string in customFields, using empty object");
+            //             customFieldsJson = '{}';
+            //         }
+            //     } else if (typeof custom_fields === 'object') {
+            //         customFieldsJson = JSON.stringify(custom_fields);
+            //     }
+            // }
+            // ✅ Convert custom fields to JSON safely
+        let customFieldsJson = "{}";
+        if (typeof custom_fields === "object") {
+            customFieldsJson = JSON.stringify(custom_fields);
+        } else if (typeof custom_fields === "string") {
+            try {
+                JSON.parse(custom_fields);
+                customFieldsJson = custom_fields;
+            } catch {
+                customFieldsJson = "{}";
             }
+        }
 
             // Set up insert statement with exact column names matching the database
             const insertOrgQuery = `
@@ -181,6 +195,7 @@ class Organization {
             // Debug log the SQL and values
             console.log("SQL Query:", insertOrgQuery);
             console.log("Query values:", JSON.stringify(values, null, 2));
+            console.log("Custom fields JSON being saved to database:", customFieldsJson);
 
             const result = await client.query(insertOrgQuery, values);
 
@@ -345,9 +360,11 @@ class Organization {
                 }
 
                 updateFields.push(`custom_fields = ${paramCount}`);
-                queryParams.push(typeof newCustomFields === 'string'
-                    ? newCustomFields
-                    : JSON.stringify(newCustomFields));
+                queryParams.push(newCustomFields); // DB JSONB me directly save ho jayega
+
+                // queryParams.push(typeof newCustomFields === 'string'
+                //     ? newCustomFields
+                //     : JSON.stringify(newCustomFields));
                 paramCount++;
 
                 // Remove from further processing

@@ -27,12 +27,12 @@ class JobController {
         console.log("Create job request body:", req.body);
 
         // Basic validation
-        if (!jobData.jobTitle) {
-            return res.status(400).json({
-                success: false,
-                message: 'Job title is required'
-            });
-        }
+        // if (!jobData.jobTitle) {
+        //     return res.status(400).json({
+        //         success: false,
+        //         message: 'Job title is required'
+        //     });
+        // }
 
         try {
             // Get the current user's ID from the auth middleware

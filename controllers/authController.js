@@ -257,7 +257,12 @@ class AuthController {
 
     // Handle user login
     async login(req, res) {
+        console.log("Login request received", req.body);
         const { email, password } = req.body;
+        console.log("Email:", email);
+
+         // Convert email to lowercase for case-insensitive login
+    email = email.toLowerCase().trim();
 
         // Input validation
         if (!email || !password) {
