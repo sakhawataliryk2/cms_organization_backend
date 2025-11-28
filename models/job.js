@@ -140,6 +140,7 @@ class Job {
                         customFieldsJson = customFields;
                     } catch (e) {
                         console.log("Invalid JSON string in customFields, using empty object");
+                        console.log("Invalid JSON string in customFields, using empty object");
                         customFieldsJson = '{}';
                     }
                 } else if (typeof customFields === 'object') {
