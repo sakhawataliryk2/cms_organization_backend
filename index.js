@@ -30,6 +30,7 @@ const CustomFieldController = require("./controllers/customFieldController");
 const UserController = require("./controllers/userController");
 const LeadController = require("./controllers/leadController");
 const TaskController = require("./controllers/taskController");
+const PlacementController = require("./controllers/placementController");
 // NEW IMPORTS
 const OfficeController = require("./controllers/officeController");
 const TeamController = require("./controllers/teamController");
@@ -43,6 +44,7 @@ const createCustomFieldRouter = require("./routes/customFieldRoutes");
 const createUserRouter = require("./routes/userRoutes");
 const createLeadRouter = require("./routes/leadRoutes");
 const createTaskRouter = require("./routes/taskRoutes");
+const createPlacementRouter = require("./routes/placementRoutes");
 // NEW ROUTE IMPORTS
 const createOfficeRouter = require("./routes/officeRoutes");
 const createTeamRouter = require("./routes/teamRoutes");
@@ -154,6 +156,10 @@ const getTaskController = () => {
   return new TaskController(getPool());
 };
 
+const getPlacementController = () => {
+  return new PlacementController(getPool());
+};
+
 // NEW CONTROLLER GETTERS
 const getOfficeController = () => {
   return new OfficeController(getPool());
@@ -232,6 +238,12 @@ app.use(async (req, res, next) => {
         const taskController = getTaskController();
         await taskController.initTables();
       }
+
+      // Initialize placement tables (depends on jobs and job_seekers)
+      if (req.path.startsWith("/api/placements")) {
+        const placementController = getPlacementController();
+        await placementController.initTables();
+      }
     } catch (error) {
       console.error("Failed to initialize tables:", error.message);
       // Continue anyway - tables might already exist
@@ -308,6 +320,12 @@ app.use("/api/leads", sanitizeInputs, (req, res, next) => {
 app.use("/api/tasks", sanitizeInputs, (req, res, next) => {
   const authMiddleware = { verifyToken: verifyToken(getPool()), checkRole };
   const router = createTaskRouter(getTaskController(), authMiddleware);
+  router(req, res, next);
+});
+
+app.use("/api/placements", sanitizeInputs, (req, res, next) => {
+  const authMiddleware = { verifyToken: verifyToken(getPool()), checkRole };
+  const router = createPlacementRouter(getPlacementController(), authMiddleware);
   router(req, res, next);
 });
 
