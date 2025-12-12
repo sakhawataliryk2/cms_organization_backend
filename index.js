@@ -345,17 +345,77 @@ app.use("/api/teams", sanitizeInputs, (req, res, next) => {
 // Database connection test
 app.get("/test-db", async (req, res) => {
   try {
+    // Check environment variables first
+    const envCheck = {
+      hasDBUser: !!process.env.DB_USER,
+      hasDBPassword: !!process.env.DB_PASSWORD,
+      hasDBHost: !!process.env.DB_HOST,
+      hasDBPort: !!process.env.DB_PORT,
+      hasDBDatabase: !!process.env.DB_DATABASE,
+      nodeEnv: process.env.NODE_ENV
+    };
+    
+    console.log("Environment check:", envCheck);
+    
+    // Check if required env vars are missing
+    const missingVars = [];
+    if (!process.env.DB_USER) missingVars.push("DB_USER");
+    if (!process.env.DB_PASSWORD) missingVars.push("DB_PASSWORD");
+    if (!process.env.DB_HOST) missingVars.push("DB_HOST");
+    if (!process.env.DB_PORT) missingVars.push("DB_PORT");
+    if (!process.env.DB_DATABASE) missingVars.push("DB_DATABASE");
+    
+    if (missingVars.length > 0) {
+      console.error("Missing environment variables:", missingVars);
+      return res.status(500).json({ 
+        success: false, 
+        error: "Database configuration error",
+        message: "Missing required environment variables",
+        missing: missingVars,
+        hint: "Please set environment variables in Vercel dashboard"
+      });
+    }
+    
     const pool = getPool();
+    console.log("Attempting database connection...");
     const client = await pool.connect();
     try {
       const result = await client.query("SELECT NOW()");
+      console.log("Database connection successful!");
       res.json({ success: true, time: result.rows[0].now });
     } finally {
       client.release(); // Always release the client back to the pool
     }
   } catch (err) {
     console.error("Database query error:", err);
-    res.status(500).json({ success: false, error: "Database error" });
+    console.error("Error message:", err.message);
+    console.error("Error code:", err.code);
+    console.error("Error stack:", err.stack);
+    
+    // Provide more detailed error information
+    const errorResponse = {
+      success: false,
+      error: "Database error",
+      message: err.message || "Unknown database error",
+      code: err.code || "UNKNOWN"
+    };
+    
+    // In development, show more details
+    if (process.env.NODE_ENV !== "production" || process.env.DEBUG === "true") {
+      errorResponse.details = {
+        stack: err.stack,
+        envCheck: {
+          hasDBUser: !!process.env.DB_USER,
+          hasDBPassword: !!process.env.DB_PASSWORD,
+          hasDBHost: !!process.env.DB_HOST,
+          hasDBPort: !!process.env.DB_PORT,
+          hasDBDatabase: !!process.env.DB_DATABASE,
+          dbHost: process.env.DB_HOST ? `${process.env.DB_HOST.substring(0, 10)}...` : "missing"
+        }
+      };
+    }
+    
+    res.status(500).json(errorResponse);
   }
 });
 
