@@ -300,6 +300,15 @@ class AuthController {
     }
 
     try {
+      // Check if database connection is available
+      if (!this.userModel) {
+        console.error("User model not initialized - database connection may be missing");
+        return res.status(500).json({
+          success: false,
+          message: "Database connection error. Please check server configuration.",
+        });
+      }
+
       // Find user by email
       const user = await this.userModel.findByEmail(email);
 
@@ -365,12 +374,25 @@ class AuthController {
     } catch (error) {
       console.error("Error during login:", error);
       console.error("Error stack:", error.stack);
+      console.error("Error message:", error.message);
       console.error("Login request body:", { email: email ? email.substring(0, 5) + "..." : "missing" });
+      
+      // Log environment variable status for debugging
+      console.error("Environment check:", {
+        hasJWTSecret: !!process.env.JWT_SECRET,
+        hasDBHost: !!process.env.DB_HOST,
+        hasDBUser: !!process.env.DB_USER,
+        hasDBPassword: !!process.env.DB_PASSWORD,
+        nodeEnv: process.env.NODE_ENV
+      });
+      
       res.status(500).json({
         success: false,
         message: "An error occurred during login",
         error:
-          process.env.NODE_ENV === "production" ? undefined : error.message,
+          process.env.NODE_ENV === "production" 
+            ? (process.env.DEBUG === "true" ? error.message : undefined)
+            : error.message,
       });
     }
   }
