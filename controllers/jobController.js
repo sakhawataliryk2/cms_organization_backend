@@ -21,30 +21,82 @@ class JobController {
 
     // Create a new job
     async create(req, res) {
-        // Extract all fields from the request body
-        const jobData = req.body;
+        // ✅ Extract fields explicitly like Organizations (including custom_fields)
+        const {
+            jobTitle,
+            category,
+            organizationId,
+            hiringManager,
+            status,
+            priority,
+            employmentType,
+            startDate,
+            worksiteLocation,
+            remoteOption,
+            jobDescription,
+            salaryType,
+            minSalary,
+            maxSalary,
+            benefits,
+            requiredSkills,
+            jobBoardStatus,
+            owner,
+            dateAdded,
+            custom_fields, // ✅ Extract custom_fields from request
+        } = req.body;
 
-        console.log("Create job request body:", req.body);
-
-        // Basic validation
-        // if (!jobData.jobTitle) {
-        //     return res.status(400).json({
-        //         success: false,
-        //         message: 'Job title is required'
-        //     });
-        // }
+        // Debug log all received fields
+        // console.log("=== CREATE JOB REQUEST ===");
+        // console.log("Full request body:", JSON.stringify(req.body, null, 2));
+        // console.log("custom_fields in req.body:", req.body.custom_fields);
+        // console.log("custom_fields type:", typeof req.body.custom_fields);
+        // console.log("custom_fields is array:", Array.isArray(req.body.custom_fields));
+        // console.log("custom_fields keys:", req.body.custom_fields ? Object.keys(req.body.custom_fields).length : 'null/undefined');
+        // console.log("Extracted custom_fields:", custom_fields);
+        // console.log("Extracted custom_fields type:", typeof custom_fields);
+        // console.log("Extracted custom_fields keys:", custom_fields ? Object.keys(custom_fields).length : 'null/undefined');
+        // console.log("=== END CREATE REQUEST ===");
+        console.log("testcustom_fields:", custom_fields);
 
         try {
             // Get the current user's ID from the auth middleware
             const userId = req.user.id;
+            
 
-            // Add userId to the job data
-            jobData.userId = userId;
+            // ✅ Build model data with custom_fields (same pattern as Organizations)
+            const modelData = {
+                jobTitle,
+                category,
+                organizationId,
+                hiringManager,
+                status,
+                priority,
+                employmentType,
+                startDate,
+                worksiteLocation,
+                remoteOption,
+                jobDescription,
+                salaryType,
+                minSalary,
+                maxSalary,
+                benefits,
+                requiredSkills,
+                jobBoardStatus,
+                owner,
+                dateAdded,
+                userId,
+                custom_fields: custom_fields || {}, // ✅ Use snake_case to match model expectation
+            };
 
-            console.log("Attempting to create job with data:", jobData);
+            console.log("=== PASSING TO MODEL ===");
+            console.log("custom_fields being passed:", JSON.stringify(modelData.custom_fields, null, 2));
+            console.log("custom_fields type:", typeof modelData.custom_fields);
+            console.log("custom_fields keys count:", modelData.custom_fields ? Object.keys(modelData.custom_fields).length : 0);
+            console.log("=== END PASSING TO MODEL ===");
 
             // Create job in database
-            const job = await this.jobModel.create(jobData);
+            console.log("testcustom_fields:", custom_fields);
+            const job = await this.jobModel.create(modelData);
 
             console.log("Job created successfully:", job);
 

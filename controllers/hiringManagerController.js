@@ -31,12 +31,12 @@ class HiringManagerController {
         console.log("Create hiring manager request body:", req.body);
 
         // Basic validation
-        if (!hiringManagerData.firstName || !hiringManagerData.lastName) {
-            return res.status(400).json({
-                success: false,
-                message: 'First name and last name are required'
-            });
-        }
+        // if (!hiringManagerData.firstName || !hiringManagerData.lastName) {
+        //     return res.status(400).json({
+        //         success: false,
+        //         message: 'First name and last name are required'
+        //     });
+        // }
 
         // Email validation if provided
         if (hiringManagerData.email) {

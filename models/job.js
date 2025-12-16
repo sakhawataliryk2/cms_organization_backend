@@ -100,10 +100,12 @@ class Job {
             owner,
             dateAdded,
             userId,
-            customFields 
+            custom_fields = {}   // ✅ Use snake_case like Organizations
         } = jobData;
 
         console.log("Job model - create function input:", JSON.stringify(jobData, null, 2));
+        console.log("Custom fields received in model:", custom_fields);
+        console.log("Custom fields type in model:", typeof custom_fields);
 
         const client = await this.pool.connect();
 
@@ -129,25 +131,38 @@ class Job {
                 }
             }
 
-            // Properly handle custom fields
+            // ✅ Convert custom fields for PostgreSQL JSONB (same pattern as Organizations)
             let customFieldsJson = '{}';
-            if (customFields) {
-                // Check if customFields is already a string
-                if (typeof customFields === 'string') {
+            
+            if (custom_fields) {
+                if (typeof custom_fields === 'string') {
+                    // It's already a string, validate it's valid JSON
                     try {
-                        // Verify it's valid JSON
-                        JSON.parse(customFields);
-                        customFieldsJson = customFields;
+                        JSON.parse(custom_fields);
+                        customFieldsJson = custom_fields;
                     } catch (e) {
-                        console.log("Invalid JSON string in customFields, using empty object");
-                        
+                        console.error("Invalid JSON string in custom_fields:", e);
                         customFieldsJson = '{}';
                     }
-                } else if (typeof customFields === 'object') {
-                    // Convert object to JSON string
-                    customFieldsJson = JSON.stringify(customFields);
+                } else if (typeof custom_fields === 'object' && !Array.isArray(custom_fields) && custom_fields !== null) {
+                    // It's a valid object, stringify it
+                    try {
+                        customFieldsJson = JSON.stringify(custom_fields);
+                    } catch (e) {
+                        console.error("Error stringifying custom_fields:", e);
+                        customFieldsJson = '{}';
+                    }
                 }
             }
+            
+            // Debug log
+            console.log("Custom fields processing:");
+            console.log("  - Received custom_fields:", custom_fields);
+            console.log("  - Type:", typeof custom_fields);
+            console.log("  - Is array:", Array.isArray(custom_fields));
+            console.log("  - Final JSON string:", customFieldsJson);
+            console.log("  - Final JSON string length:", customFieldsJson.length);
+            console.log("  - Parsed keys count:", customFieldsJson !== '{}' ? Object.keys(JSON.parse(customFieldsJson)).length : 0);
 
             // Set up insert statement with column names matching the database
             const insertJobQuery = `
@@ -362,39 +377,50 @@ class Job {
             // Log the incoming update data for debugging
             console.log("Update data received:", updateData);
 
-            // Special handling for customFields which needs to be merged
-            if (updateData.customFields) {
+            // ✅ Handle custom fields merging (same pattern as Organizations)
+            if (updateData.customFields || updateData.custom_fields) {
+                const customFieldsData = updateData.customFields || updateData.custom_fields;
                 let newCustomFields = {};
 
-                // Parse existing custom fields
                 try {
                     const existingCustomFields = typeof job.custom_fields === 'string'
                         ? JSON.parse(job.custom_fields || '{}')
                         : (job.custom_fields || {});
 
-                    // Parse update custom fields
-                    const updateCustomFields = typeof updateData.customFields === 'string'
-                        ? JSON.parse(updateData.customFields)
-                        : updateData.customFields;
+                    const updateCustomFields = typeof customFieldsData === 'string'
+                        ? JSON.parse(customFieldsData)
+                        : customFieldsData;
 
-                    // Merge them
-                    newCustomFields = {
-                        ...existingCustomFields,
-                        ...updateCustomFields
-                    };
+                    // Ensure updateCustomFields is an object, not an integer or other type
+                    if (typeof updateCustomFields === 'object' && updateCustomFields !== null && !Array.isArray(updateCustomFields)) {
+                        newCustomFields = { ...existingCustomFields, ...updateCustomFields };
+                    } else {
+                        console.error("Warning: custom_fields data is not a valid object:", updateCustomFields);
+                        newCustomFields = existingCustomFields; // Keep existing if new data is invalid
+                    }
                 } catch (e) {
                     console.error("Error parsing custom fields:", e);
-                    // If there's an error, just use the new value
-                    newCustomFields = typeof updateData.customFields === 'string'
-                        ? updateData.customFields
-                        : JSON.stringify(updateData.customFields);
+                    // If parsing fails, ensure we still have a valid object
+                    if (typeof customFieldsData === 'object' && customFieldsData !== null && !Array.isArray(customFieldsData)) {
+                        newCustomFields = customFieldsData;
+                    } else {
+                        newCustomFields = {};
+                    }
+                }
+
+                // Final validation: ensure newCustomFields is always an object
+                if (typeof newCustomFields !== 'object' || newCustomFields === null || Array.isArray(newCustomFields)) {
+                    console.error("CRITICAL: newCustomFields is not a valid object, using empty object");
+                    newCustomFields = {};
                 }
 
                 updateFields.push(`custom_fields = $${paramCount}`);
-                queryParams.push(typeof newCustomFields === 'string'
-                    ? newCustomFields
-                    : JSON.stringify(newCustomFields));
+                queryParams.push(newCustomFields); // DB JSONB me directly save ho jayega
                 paramCount++;
+
+                // Remove from further processing
+                delete updateData.customFields;
+                delete updateData.custom_fields;
             }
 
             // Handle organization ID conversion
@@ -425,18 +451,36 @@ class Job {
 
             // Process all other fields - Map from camelCase to snake_case
             for (const [key, value] of Object.entries(updateData)) {
-                if (key !== 'customFields' && key !== 'organizationId' && fieldMapping[key] && value !== undefined) {
-                    updateFields.push(`${fieldMapping[key]} = $${paramCount}`);
-
-                    // Handle numeric conversions
-                    if (key === 'minSalary' || key === 'maxSalary') {
-                        queryParams.push(value ? parseFloat(value) : null);
-                    } else {
-                        queryParams.push(value);
-                    }
-
-                    paramCount++;
+                // Skip customFields and custom_fields as they're already processed
+                if (key === 'customFields' || key === 'custom_fields') {
+                    continue;
                 }
+
+                // Skip undefined values - don't include them in the update
+                if (value === undefined) {
+                    continue;
+                }
+
+                // Get the database field name (snake_case)
+                const dbFieldName = fieldMapping[key] || key;
+                let paramValue = value;
+
+                // Handle numeric conversions
+                if (key === 'minSalary' || key === 'maxSalary') {
+                    paramValue = value ? parseFloat(value) : null;
+                }
+
+                // Ensure paramValue is not undefined before adding
+                if (paramValue === undefined) {
+                    console.warn(`Warning: paramValue is undefined for field ${key} (${dbFieldName}), skipping`);
+                    continue;
+                }
+
+                // Add field and parameter
+                console.log(`Adding field: ${dbFieldName} = $${paramCount}, value:`, paramValue, `type:`, typeof paramValue);
+                updateFields.push(`${dbFieldName} = $${paramCount}`);
+                queryParams.push(paramValue);
+                paramCount++;
             }
 
             // Always update the updated_at timestamp

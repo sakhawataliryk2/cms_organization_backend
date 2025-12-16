@@ -213,8 +213,6 @@ class OrganizationController {
         }
     }
 
-
-
     // Get all organizations
     async getAll(req, res) {
         try {
@@ -278,10 +276,6 @@ class OrganizationController {
             });
         }
     }
-
-
-
-
 
     // Update the update method to properly handle all fields
     async update(req, res) {
