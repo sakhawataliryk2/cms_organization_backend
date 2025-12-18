@@ -22,10 +22,33 @@ class JobSeekerController {
 
   // Create a new job seeker
   async create(req, res) {
-    // Extract all fields from the request body
-    const jobSeekerData = req.body;
+    // ✅ Extract fields explicitly like Organizations (including custom_fields)
+    const {
+      firstName,
+      lastName,
+      email,
+      phone,
+      mobilePhone,
+      address,
+      city,
+      state,
+      zip,
+      status,
+      currentOrganization,
+      title,
+      resumeText,
+      skills,
+      desiredSalary,
+      owner,
+      dateAdded,
+      lastContactDate,
+      custom_fields, // ✅ Extract custom_fields from request
+    } = req.body;
 
     console.log("Create job seeker request body:", req.body);
+    console.log("custom_fields in req.body:", req.body.custom_fields);
+    console.log("custom_fields type:", typeof req.body.custom_fields);
+    console.log("custom_fields keys:", req.body.custom_fields ? Object.keys(req.body.custom_fields).length : 'null/undefined');
 
     // Basic validation
     // if (!jobSeekerData.firstName || !jobSeekerData.lastName) {
@@ -39,13 +62,38 @@ class JobSeekerController {
       // Get the current user's ID from the auth middleware
       const userId = req.user.id;
 
-      // Add userId to the job seeker data
-      jobSeekerData.userId = userId;
+      // ✅ Build model data with custom_fields (same pattern as Organizations)
+      const modelData = {
+        firstName,
+        lastName,
+        email,
+        phone,
+        mobilePhone,
+        address,
+        city,
+        state,
+        zip,
+        status,
+        currentOrganization,
+        title,
+        resumeText,
+        skills,
+        desiredSalary,
+        owner,
+        dateAdded,
+        lastContactDate,
+        userId,
+        custom_fields: custom_fields || {}, // ✅ Use snake_case to match model expectation
+      };
 
-      console.log("Attempting to create job seeker with data:", jobSeekerData);
+      console.log("=== PASSING TO MODEL ===");
+      console.log("custom_fields being passed:", JSON.stringify(modelData.custom_fields, null, 2));
+      console.log("custom_fields type:", typeof modelData.custom_fields);
+      console.log("custom_fields keys count:", modelData.custom_fields ? Object.keys(modelData.custom_fields).length : 0);
+      console.log("=== END PASSING TO MODEL ===");
 
       // Create job seeker in database
-      const jobSeeker = await this.jobSeekerModel.create(jobSeekerData);
+      const jobSeeker = await this.jobSeekerModel.create(modelData);
 
       console.log("Job seeker created successfully:", jobSeeker);
 
