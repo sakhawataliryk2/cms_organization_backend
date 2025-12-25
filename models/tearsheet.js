@@ -72,32 +72,31 @@ class Tearsheet {
     }
   }
 
-  async getAll() {
-    const client = await this.pool.connect();
-    try {
-      const result = await client.query(
-        `
-          SELECT
-            t.*,
-            u.name AS owner_name,
-            COALESCE(js.full_name, CONCAT_WS(' ', js.first_name, js.last_name)) AS job_seeker_name,
-            COALESCE(CONCAT_WS(' ', hm.first_name, hm.last_name), hm.full_name, hm.name) AS hiring_manager_name,
-            j.job_title AS job_order,
-            COALESCE(l.full_name, CONCAT_WS(' ', l.first_name, l.last_name)) AS lead_name
-          FROM tearsheets t
-          LEFT JOIN users u ON t.created_by = u.id
-          LEFT JOIN job_seekers js ON t.job_seeker_id = js.id
-          LEFT JOIN hiring_managers hm ON t.hiring_manager_id = hm.id
-          LEFT JOIN jobs j ON t.job_id = j.id
-          LEFT JOIN leads l ON t.lead_id = l.id
-          ORDER BY t.created_at DESC
-        `
-      );
-      return result.rows;
-    } finally {
-      client.release();
-    }
+ async getAll() {
+  const client = await this.pool.connect();
+  try {
+    const result = await client.query(`
+      SELECT
+        t.*,
+        u.name AS owner_name,
+        CONCAT_WS(' ', js.first_name, js.last_name) AS job_seeker_name,
+        CONCAT_WS(' ', hm.first_name, hm.last_name) AS hiring_manager_name,
+        j.job_title AS job_order,
+        CONCAT_WS(' ', l.first_name, l.last_name) AS lead_name
+      FROM tearsheets t
+      LEFT JOIN users u ON t.created_by = u.id
+      LEFT JOIN job_seekers js ON t.job_seeker_id = js.id
+      LEFT JOIN hiring_managers hm ON t.hiring_manager_id = hm.id
+      LEFT JOIN jobs j ON t.job_id = j.id
+      LEFT JOIN leads l ON t.lead_id = l.id
+      ORDER BY t.created_at DESC
+    `);
+    return result.rows;
+  } finally {
+    client.release();
   }
+}
+
 }
 
 module.exports = Tearsheet;
