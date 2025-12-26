@@ -20,6 +20,7 @@ class Task {
                     is_completed BOOLEAN DEFAULT false,
                     due_date DATE,
                     due_time TIME,
+                    organization_id INTEGER REFERENCES organizations(id),
                     job_seeker_id INTEGER REFERENCES job_seekers(id),
                     hiring_manager_id INTEGER REFERENCES hiring_managers(id),
                     job_id INTEGER REFERENCES jobs(id),
@@ -36,6 +37,20 @@ class Task {
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     custom_fields JSONB
                 )
+            `);
+
+            // Add organization_id column if it doesn't exist (for existing tables)
+            await client.query(`
+                DO $$ 
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns 
+                        WHERE table_name='tasks' AND column_name='organization_id'
+                    ) THEN
+                        ALTER TABLE tasks ADD COLUMN organization_id INTEGER REFERENCES organizations(id);
+                        CREATE INDEX IF NOT EXISTS idx_tasks_organization_id ON tasks(organization_id);
+                    END IF;
+                END $$;
             `);
 
             // Create task notes table
@@ -81,41 +96,66 @@ class Task {
             isCompleted,
             dueDate,
             dueTime,
+            organizationId,
+            organization_id, // Support both formats
             jobSeekerId,
+            job_seeker_id, // Support both formats
             hiringManagerId,
+            hiring_manager_id, // Support both formats
             jobId,
+            job_id, // Support both formats
             leadId,
+            lead_id, // Support both formats
             placementId,
+            placement_id, // Support both formats
             owner,
             priority,
             status,
             assignedTo,
+            assigned_to, // Support both formats
             userId,
-            customFields = {}
+            customFields,
+            custom_fields // Support both formats
         } = taskData;
 
+        // Use organizationId or organization_id (prefer organizationId)
+        const finalOrganizationId = organizationId || organization_id;
+        const finalJobSeekerId = jobSeekerId || job_seeker_id;
+        const finalHiringManagerId = hiringManagerId || hiring_manager_id;
+        const finalJobId = jobId || job_id;
+        const finalLeadId = leadId || lead_id;
+        const finalPlacementId = placementId || placement_id;
+        const finalAssignedTo = assignedTo || assigned_to;
+        const finalCustomFields = customFields || custom_fields || {};
+
         console.log("Task model - create function input:", JSON.stringify(taskData, null, 2));
+        console.log("Mapped organizationId:", finalOrganizationId);
+        console.log("Mapped customFields:", finalCustomFields);
 
         const client = await this.pool.connect();
 
         try {
             await client.query('BEGIN');
 
-            // Handle custom fields
+            // Handle custom fields - accept both customFields and custom_fields
             let customFieldsJson = '{}';
-            if (customFields) {
-                if (typeof customFields === 'string') {
+            if (finalCustomFields) {
+                if (typeof finalCustomFields === 'string') {
                     try {
-                        JSON.parse(customFields);
-                        customFieldsJson = customFields;
+                        // Validate it's valid JSON
+                        JSON.parse(finalCustomFields);
+                        customFieldsJson = finalCustomFields;
                     } catch (e) {
                         console.log("Invalid JSON string in customFields, using empty object");
                         customFieldsJson = '{}';
                     }
-                } else if (typeof customFields === 'object') {
-                    customFieldsJson = JSON.stringify(customFields);
+                } else if (typeof finalCustomFields === 'object') {
+                    // Convert object to JSON string for JSONB storage
+                    customFieldsJson = JSON.stringify(finalCustomFields);
                 }
             }
+            
+            console.log("Custom fields JSON to insert:", customFieldsJson);
 
             const insertTaskQuery = `
                 INSERT INTO tasks (
@@ -124,6 +164,7 @@ class Task {
                     is_completed,
                     due_date,
                     due_time,
+                    organization_id,
                     job_seeker_id,
                     hiring_manager_id,
                     job_id,
@@ -136,7 +177,7 @@ class Task {
                     created_by,
                     custom_fields
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
                 RETURNING *
             `;
 
@@ -146,18 +187,21 @@ class Task {
                 isCompleted || false,
                 dueDate || null,
                 dueTime || null,
-                jobSeekerId ? parseInt(jobSeekerId) : null,
-                hiringManagerId ? parseInt(hiringManagerId) : null,
-                jobId ? parseInt(jobId) : null,
-                leadId ? parseInt(leadId) : null,
-                placementId ? parseInt(placementId) : null,
+                finalOrganizationId ? parseInt(finalOrganizationId) : null,
+                finalJobSeekerId ? parseInt(finalJobSeekerId) : null,
+                finalHiringManagerId ? parseInt(finalHiringManagerId) : null,
+                finalJobId ? parseInt(finalJobId) : null,
+                finalLeadId ? parseInt(finalLeadId) : null,
+                finalPlacementId ? parseInt(finalPlacementId) : null,
                 owner,
                 priority || 'Medium',
                 status || 'Pending',
-                assignedTo && assignedTo !== '' ? parseInt(assignedTo) : null,
+                finalAssignedTo && finalAssignedTo !== '' ? parseInt(finalAssignedTo) : null,
                 userId,
                 customFieldsJson
             ];
+            
+            console.log("Insert values:", values);
 
             console.log("SQL Query:", insertTaskQuery);
             console.log("Query values:", values);
@@ -312,6 +356,7 @@ class Task {
                 isCompleted: 'is_completed',
                 dueDate: 'due_date',
                 dueTime: 'due_time',
+                organizationId: 'organization_id',
                 jobSeekerId: 'job_seeker_id',
                 hiringManagerId: 'hiring_manager_id',
                 jobId: 'job_id',
@@ -339,17 +384,18 @@ class Task {
                 }
             }
 
-            // Handle custom fields merging
-            if (updateData.customFields) {
+            // Handle custom fields merging - accept both customFields and custom_fields
+            const updateCustomFieldsData = updateData.customFields || updateData.custom_fields;
+            if (updateCustomFieldsData) {
                 let newCustomFields = {};
                 try {
                     const existingCustomFields = typeof task.custom_fields === 'string'
                         ? JSON.parse(task.custom_fields || '{}')
                         : (task.custom_fields || {});
 
-                    const updateCustomFields = typeof updateData.customFields === 'string'
-                        ? JSON.parse(updateData.customFields)
-                        : updateData.customFields;
+                    const updateCustomFields = typeof updateCustomFieldsData === 'string'
+                        ? JSON.parse(updateCustomFieldsData)
+                        : updateCustomFieldsData;
 
                     newCustomFields = { ...existingCustomFields, ...updateCustomFields };
                 } catch (e) {
@@ -368,11 +414,11 @@ class Task {
 
             // Process other fields
             for (const [key, value] of Object.entries(updateData)) {
-                if (key !== 'customFields' && fieldMapping[key] && value !== undefined) {
+                if (key !== 'customFields' && key !== 'custom_fields' && fieldMapping[key] && value !== undefined) {
                     updateFields.push(`${fieldMapping[key]} = $${paramCount}`);
 
                     // Handle numeric conversions
-                    if (['jobSeekerId', 'hiringManagerId', 'jobId', 'leadId', 'placementId', 'assignedTo'].includes(key)) {
+                    if (['organizationId', 'jobSeekerId', 'hiringManagerId', 'jobId', 'leadId', 'placementId', 'assignedTo'].includes(key)) {
                         queryParams.push(value ? parseInt(value) : null);
                     } else if (key === 'isCompleted') {
                         queryParams.push(Boolean(value));

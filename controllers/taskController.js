@@ -48,7 +48,19 @@ class TaskController {
             // Add userId to the task data
             taskData.userId = userId;
 
-            console.log("Attempting to create task with data:", taskData);
+            // Ensure customFields is properly set (accept both camelCase and snake_case)
+            if (!taskData.customFields && taskData.custom_fields) {
+                taskData.customFields = taskData.custom_fields;
+            }
+
+            // Ensure organizationId is properly set (accept both camelCase and snake_case)
+            if (!taskData.organizationId && taskData.organization_id) {
+                taskData.organizationId = taskData.organization_id;
+            }
+
+            console.log("Attempting to create task with data:", JSON.stringify(taskData, null, 2));
+            console.log("OrganizationId:", taskData.organizationId);
+            console.log("CustomFields:", taskData.customFields);
 
             // Create task in database
             const task = await this.taskModel.create(taskData);
