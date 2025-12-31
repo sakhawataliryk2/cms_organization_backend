@@ -5,6 +5,7 @@ const cors = require("cors");
 require("dotenv").config();
 const helmet = require("helmet");
 const compression = require("compression");
+const path = require("path");
 
 // Check for required environment variables (only in production)
 if (process.env.NODE_ENV === 'production') {
@@ -39,6 +40,7 @@ const HeaderConfigController = require("./controllers/headerConfigController");
 // NEW IMPORTS
 const OfficeController = require("./controllers/officeController");
 const TeamController = require("./controllers/teamController");
+const TemplateDocumentController = require("./controllers/templateDocumentController");
 
 const createAuthRouter = require("./routes/authRoutes");
 const createOrganizationRouter = require("./routes/organizationRoutes");
@@ -58,6 +60,7 @@ const createHeaderConfigRouter = require("./routes/headerConfigRoutes");
 // NEW ROUTE IMPORTS
 const createOfficeRouter = require("./routes/officeRoutes");
 const createTeamRouter = require("./routes/teamRoutes");
+const createTemplateDocumentsRouter = require("./routes/templateDocumentsRoutes");
 
 const { notFound, errorHandler } = require("./middleware/errorMiddleware");
 const { sanitizeInputs } = require("./middleware/validationMiddleware");
@@ -108,6 +111,24 @@ try {
 // Parse request bodies with increased limits
 app.use(bodyParser.json({ limit: "1mb" }));
 app.use(bodyParser.urlencoded({ extended: false, limit: "1mb" }));
+app.use(
+  "/uploads",
+  cors({
+    origin: true,
+    credentials: true,
+  }),
+  (req, res, next) => {
+    res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+    next();
+  },
+  express.static(path.join(process.cwd(), "uploads"), {
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith(".pdf")) {
+        res.setHeader("Content-Type", "application/pdf");
+      }
+    },
+  })
+);
 
 // Request logging middleware
 app.use((req, res, next) => {
@@ -305,6 +326,10 @@ app.use(async (req, res, next) => {
         const headerConfigController = getHeaderConfigController();
         await headerConfigController.initTables();
       }
+      if (req.path.startsWith("/api/template-documents")) {
+        const templateController = new TemplateDocumentController(getPool());
+        await templateController.initTables();
+      }
     } catch (error) {
       console.error("Failed to initialize tables:", error.message);
       // Continue anyway - tables might already exist
@@ -431,6 +456,11 @@ app.use("/api/offices", sanitizeInputs, (req, res, next) => {
 app.use("/api/teams", sanitizeInputs, (req, res, next) => {
   const authMiddleware = { verifyToken: verifyToken(getPool()), checkRole };
   const router = createTeamRouter(getTeamController(), authMiddleware);
+  router(req, res, next);
+});
+app.use("/api/template-documents", sanitizeInputs, (req, res, next) => {
+  const authMiddleware = { verifyToken: verifyToken(getPool()), checkRole };
+  const router = createTemplateDocumentsRouter(getPool(), authMiddleware);
   router(req, res, next);
 });
 
