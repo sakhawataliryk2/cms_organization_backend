@@ -9,6 +9,9 @@ class TemplateDocumentController {
     this.create = this.create.bind(this);
     this.update = this.update.bind(this);
     this.delete = this.delete.bind(this);
+    this.getMappings = this.getMappings.bind(this);
+    this.saveMappings = this.saveMappings.bind(this);
+
     this.getInternalUsers = this.getInternalUsers.bind(this);
   }
 
@@ -173,6 +176,68 @@ class TemplateDocumentController {
       if (client) client.release();
     }
   }
+  async getMappings(req, res) {
+    try {
+      const docId = req.params.id;
+
+      const doc = await this.model.getById(docId);
+      if (!doc)
+        return res.status(404).json({ success: false, message: "Not found" });
+
+      const fields = await this.model.getMappings(docId);
+      return res.json({ success: true, fields });
+    } catch (e) {
+      return res.status(500).json({
+        success: false,
+        message: "Failed to fetch mappings",
+        error: process.env.NODE_ENV === "production" ? undefined : e.message,
+      });
+    }
+  }
+async saveMappings(req, res) {
+  try {
+    const docId = req.params.id;
+
+    const doc = await this.model.getById(docId);
+    if (!doc)
+      return res.status(404).json({ success: false, message: "Not found" });
+
+    const incoming = Array.isArray(req.body.fields) ? req.body.fields : [];
+
+    // ✅ normalize + ensure x,y,w,h
+    const fields = incoming.map((f, idx) => ({
+      field_id: f.field_id ?? null,
+      field_name: f.field_name ?? f.source_field_name ?? null,
+      field_label: f.field_label ?? f.source_field_label ?? null,
+
+      field_type: f.field_type ?? f.fieldType ?? "Text Input",
+      who_fills: f.who_fills ?? f.whoFills ?? "Candidate",
+      is_required: f.is_required ?? (f.required === "Yes") ?? false,
+      max_characters: f.max_characters ?? f.maxChars ?? 255,
+      format: f.format ?? "None",
+      populate_with_data: f.populate_with_data ?? (f.populateWithData === "Yes") ?? false,
+      data_flow_back: f.data_flow_back ?? (f.dataFlowBack === "Yes") ?? false,
+      sort_order: f.sort_order ?? idx,
+
+     
+      x: Number.isFinite(Number(f.x)) ? Number(f.x) : 0,
+      y: Number.isFinite(Number(f.y)) ? Number(f.y) : 0,
+      w: Number.isFinite(Number(f.w)) ? Number(f.w) : 220,
+      h: Number.isFinite(Number(f.h)) ? Number(f.h) : 44,
+    }));
+
+    await this.model.replaceMappings(docId, fields);
+
+    return res.json({ success: true, message: "Mappings saved" });
+  } catch (e) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to save mappings",
+      error: process.env.NODE_ENV === "production" ? undefined : e.message,
+    });
+  }
+}
+
 }
 
 module.exports = TemplateDocumentController;

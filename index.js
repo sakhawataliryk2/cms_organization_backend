@@ -7,6 +7,7 @@ const helmet = require("helmet");
 const compression = require("compression");
 const path = require("path");
 
+
 // Check for required environment variables (only in production)
 if (process.env.NODE_ENV === 'production') {
   const requiredEnvVars = ['JWT_SECRET', 'DB_HOST', 'DB_USER', 'DB_PASSWORD', 'DB_DATABASE'];
@@ -61,6 +62,8 @@ const createHeaderConfigRouter = require("./routes/headerConfigRoutes");
 const createOfficeRouter = require("./routes/officeRoutes");
 const createTeamRouter = require("./routes/teamRoutes");
 const createTemplateDocumentsRouter = require("./routes/templateDocumentsRoutes");
+
+const packetRoutes = require("./routes/packetRoutes");
 
 const { notFound, errorHandler } = require("./middleware/errorMiddleware");
 const { sanitizeInputs } = require("./middleware/validationMiddleware");
@@ -330,6 +333,12 @@ app.use(async (req, res, next) => {
         const templateController = new TemplateDocumentController(getPool());
         await templateController.initTables();
       }
+      if (req.path.startsWith("/api/packets")) {
+        const Packet = require("./models/Packet");
+        const packetModel = new Packet(getPool());
+        await packetModel.initTable();
+      }
+
     } catch (error) {
       console.error("Failed to initialize tables:", error.message);
       // Continue anyway - tables might already exist
@@ -463,6 +472,12 @@ app.use("/api/template-documents", sanitizeInputs, (req, res, next) => {
   const router = createTemplateDocumentsRouter(getPool(), authMiddleware);
   router(req, res, next);
 });
+app.use("/api/packets", sanitizeInputs, (req, res, next) => {
+  const authMiddleware = { verifyToken: verifyToken(getPool()), checkRole };
+  const router = packetRoutes(getPool(), authMiddleware);
+  router(req, res, next);
+});
+
 
 // Database connection test
 app.get("/test-db", async (req, res) => {

@@ -39,6 +39,34 @@ class TemplateDocument {
       `);
 
       await client.query(`
+        CREATE TABLE IF NOT EXISTS template_document_mappings (
+          id SERIAL PRIMARY KEY,
+          template_document_id INTEGER REFERENCES template_documents(id) ON DELETE CASCADE,
+
+          field_id INTEGER,
+          field_name VARCHAR(120) NOT NULL,
+          field_label VARCHAR(255),
+          field_type VARCHAR(40) NOT NULL,
+
+          who_fills VARCHAR(20) DEFAULT 'candidate',
+          is_required BOOLEAN DEFAULT FALSE,
+          max_characters INTEGER DEFAULT 255,
+          format VARCHAR(30) DEFAULT 'none',
+          populate_with_data BOOLEAN DEFAULT FALSE,
+          data_flow_back BOOLEAN DEFAULT FALSE,
+
+          sort_order INTEGER DEFAULT 0,
+          x INTEGER DEFAULT 0,
+y INTEGER DEFAULT 0,
+w INTEGER DEFAULT 0,
+h INTEGER DEFAULT 0,
+
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+
+      await client.query(`
         CREATE INDEX IF NOT EXISTS idx_template_documents_status
         ON template_documents(status)
       `);
@@ -47,6 +75,18 @@ class TemplateDocument {
         CREATE INDEX IF NOT EXISTS idx_template_document_notifications_doc
         ON template_document_notifications(template_document_id)
       `);
+
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS idx_template_document_mappings_doc
+        ON template_document_mappings(template_document_id)
+      `);
+      await client.query(`
+  ALTER TABLE template_document_mappings
+    ADD COLUMN IF NOT EXISTS x INTEGER DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS y INTEGER DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS w INTEGER DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS h INTEGER DEFAULT 0
+`);
 
       return true;
     } finally {
@@ -58,12 +98,19 @@ class TemplateDocument {
     const client = await this.pool.connect();
     try {
       const q = `
-        SELECT td.*, u.name AS created_by_name
-        FROM template_documents td
-        LEFT JOIN users u ON u.id = td.created_by
-        WHERE td.status = TRUE
-        ORDER BY td.created_at DESC
-      `;
+      SELECT 
+        td.*, 
+        u.name AS created_by_name,
+        COALESCE(COUNT(m.id), 0)::int AS mapped_count
+
+      FROM template_documents td
+      LEFT JOIN users u ON u.id = td.created_by
+      LEFT JOIN template_document_mappings m 
+        ON m.template_document_id = td.id
+      WHERE td.status = TRUE
+      GROUP BY td.id, u.name
+      ORDER BY td.created_at DESC
+    `;
       const r = await client.query(q);
       return r.rows;
     } finally {
@@ -119,7 +166,6 @@ class TemplateDocument {
       const inserted = await client.query(q, values);
       const doc = inserted.rows[0];
 
-      // notifications mapping
       if (
         Array.isArray(data.notification_user_ids) &&
         data.notification_user_ids.length
@@ -127,7 +173,6 @@ class TemplateDocument {
         const rows = data.notification_user_ids.map((uid) => [doc.id, uid]);
         const flat = rows.flat();
 
-        // build ($1,$2),($3,$4) ...
         const placeholders = rows
           .map((_, i) => `($${i * 2 + 1}, $${i * 2 + 2})`)
           .join(",");
@@ -186,7 +231,6 @@ class TemplateDocument {
         id,
       ]);
 
-      // replace notifications if provided
       if (Array.isArray(data.notification_user_ids)) {
         await client.query(
           `DELETE FROM template_document_notifications WHERE template_document_id = $1`,
@@ -222,6 +266,84 @@ class TemplateDocument {
       const q = `UPDATE template_documents SET status = FALSE, updated_at = NOW() WHERE id = $1 RETURNING *`;
       const r = await client.query(q, [id]);
       return r.rows[0] || null;
+    } finally {
+      client.release();
+    }
+  }
+
+  async getMappings(template_document_id) {
+    const client = await this.pool.connect();
+    try {
+      const q = `
+        SELECT *
+        FROM template_document_mappings
+        WHERE template_document_id = $1
+        ORDER BY sort_order ASC, id ASC
+      `;
+      const r = await client.query(q, [template_document_id]);
+      return r.rows || [];
+    } finally {
+      client.release();
+    }
+  }
+
+  async replaceMappings(docId, fields) {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      await client.query(
+        "DELETE FROM template_document_mappings WHERE template_document_id = $1",
+        [docId]
+      );
+
+      const q = `
+      INSERT INTO template_document_mappings
+      (
+        template_document_id,
+        field_id,
+        field_name,
+        field_label,
+        field_type,
+        who_fills,
+        is_required,
+        max_characters,
+        format,
+        populate_with_data,
+        data_flow_back,
+        sort_order,
+        x, y, w, h
+      )
+      VALUES
+      ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+    `;
+
+      for (const f of fields) {
+        await client.query(q, [
+          docId,
+          f.field_id,
+          f.field_name,
+          f.field_label,
+          f.field_type,
+          f.who_fills,
+          f.is_required,
+          f.max_characters,
+          f.format,
+          f.populate_with_data,
+          f.data_flow_back,
+          f.sort_order,
+          f.x,
+          f.y,
+          f.w,
+          f.h,
+        ]);
+      }
+
+      await client.query("COMMIT");
+      return true;
+    } catch (e) {
+      await client.query("ROLLBACK");
+      throw e;
     } finally {
       client.release();
     }
