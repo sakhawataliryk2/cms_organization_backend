@@ -61,6 +61,7 @@ const createHeaderConfigRouter = require("./routes/headerConfigRoutes");
 const createOfficeRouter = require("./routes/officeRoutes");
 const createTeamRouter = require("./routes/teamRoutes");
 const createTemplateDocumentsRouter = require("./routes/templateDocumentsRoutes");
+const createScrapeRouter = require("./routes/scrapeRoutes");
 
 const { notFound, errorHandler } = require("./middleware/errorMiddleware");
 const { sanitizeInputs } = require("./middleware/validationMiddleware");
@@ -461,6 +462,13 @@ app.use("/api/teams", sanitizeInputs, (req, res, next) => {
 app.use("/api/template-documents", sanitizeInputs, (req, res, next) => {
   const authMiddleware = { verifyToken: verifyToken(getPool()), checkRole };
   const router = createTemplateDocumentsRouter(getPool(), authMiddleware);
+  router(req, res, next);
+});
+
+// Setup scrape routes with authentication
+app.use("/api/scrape", sanitizeInputs, (req, res, next) => {
+  const authMiddleware = { verifyToken: verifyToken(getPool()), checkRole };
+  const router = createScrapeRouter(getPool());
   router(req, res, next);
 });
 

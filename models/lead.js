@@ -100,7 +100,12 @@ class Lead {
             address,
             dateAdded,
             userId,
-            customFields = {}
+            customFields = {},
+            hiringManagerIds = [],
+            jobSeekerIds = [],
+            jobIds = [],
+            placementIds = [],
+            opportunityIds = []
         } = leadData;
 
         console.log("Lead model - create function input:", JSON.stringify(leadData, null, 2));
@@ -149,21 +154,40 @@ class Lead {
                 }
             }
 
-            // Properly handle custom fields
-            let customFieldsJson = '{}';
+            // Properly handle custom fields and merge relationship IDs
+            let customFieldsObj = {};
             if (customFields) {
                 if (typeof customFields === 'string') {
                     try {
-                        JSON.parse(customFields);
-                        customFieldsJson = customFields;
+                        customFieldsObj = JSON.parse(customFields);
                     } catch (e) {
                         console.log("Invalid JSON string in customFields, using empty object");
-                        customFieldsJson = '{}';
+                        customFieldsObj = {};
                     }
                 } else if (typeof customFields === 'object') {
-                    customFieldsJson = JSON.stringify(customFields);
+                    customFieldsObj = { ...customFields };
                 }
             }
+
+            // Store relationship IDs in custom_fields for easy querying
+            // These are also stored in Field_18, Field_20, etc., but we add structured versions
+            if (hiringManagerIds && hiringManagerIds.length > 0) {
+                customFieldsObj._relationship_hiring_manager_ids = hiringManagerIds;
+            }
+            if (jobSeekerIds && jobSeekerIds.length > 0) {
+                customFieldsObj._relationship_job_seeker_ids = jobSeekerIds;
+            }
+            if (jobIds && jobIds.length > 0) {
+                customFieldsObj._relationship_job_ids = jobIds;
+            }
+            if (placementIds && placementIds.length > 0) {
+                customFieldsObj._relationship_placement_ids = placementIds;
+            }
+            if (opportunityIds && opportunityIds.length > 0) {
+                customFieldsObj._relationship_opportunity_ids = opportunityIds;
+            }
+
+            const customFieldsJson = JSON.stringify(customFieldsObj);
 
             // Set up insert statement
             const insertLeadQuery = `
@@ -369,6 +393,24 @@ class Lead {
                 customFields: 'custom_fields'
             };
 
+            // Get existing custom fields first
+            let existingCustomFields = {};
+            try {
+                existingCustomFields = typeof lead.custom_fields === 'string'
+                    ? JSON.parse(lead.custom_fields || '{}')
+                    : (lead.custom_fields || {});
+            } catch (e) {
+                console.error("Error parsing existing custom fields:", e);
+                existingCustomFields = {};
+            }
+
+            // Extract relationship IDs from updateData (if provided)
+            const hiringManagerIds = updateData.hiringManagerIds;
+            const jobSeekerIds = updateData.jobSeekerIds;
+            const jobIds = updateData.jobIds;
+            const placementIds = updateData.placementIds;
+            const opportunityIds = updateData.opportunityIds;
+
             // Handle organization ID conversion
             if (updateData.organizationId !== undefined) {
                 let orgId = null;
@@ -416,31 +458,73 @@ class Lead {
             }
 
             // Handle custom fields merging
-            if (updateData.customFields) {
-                let newCustomFields = {};
+            const hasRelationshipIds = hiringManagerIds !== undefined || jobSeekerIds !== undefined || 
+                jobIds !== undefined || placementIds !== undefined || opportunityIds !== undefined;
+            
+            if (updateData.customFields || updateData.custom_fields || hasRelationshipIds) {
+                let newCustomFields = { ...existingCustomFields };
 
-                try {
-                    const existingCustomFields = typeof lead.custom_fields === 'string'
-                        ? JSON.parse(lead.custom_fields || '{}')
-                        : (lead.custom_fields || {});
+                // Merge custom fields from updateData
+                const customFieldsToMerge = updateData.customFields || updateData.custom_fields;
+                if (customFieldsToMerge) {
+                    try {
+                        const updateCustomFields = typeof customFieldsToMerge === 'string'
+                            ? JSON.parse(customFieldsToMerge)
+                            : customFieldsToMerge;
+                        newCustomFields = { ...newCustomFields, ...updateCustomFields };
+                    } catch (e) {
+                        console.error("Error parsing custom fields:", e);
+                    }
+                }
 
-                    const updateCustomFields = typeof updateData.customFields === 'string'
-                        ? JSON.parse(updateData.customFields)
-                        : updateData.customFields;
-
-                    newCustomFields = { ...existingCustomFields, ...updateCustomFields };
-                } catch (e) {
-                    console.error("Error parsing custom fields:", e);
-                    newCustomFields = typeof updateData.customFields === 'string'
-                        ? updateData.customFields
-                        : JSON.stringify(updateData.customFields);
+                // Store relationship IDs in custom_fields for easy querying
+                // Only update if explicitly provided in updateData
+                if (hiringManagerIds !== undefined) {
+                    if (Array.isArray(hiringManagerIds) && hiringManagerIds.length > 0) {
+                        newCustomFields._relationship_hiring_manager_ids = hiringManagerIds;
+                    } else {
+                        delete newCustomFields._relationship_hiring_manager_ids;
+                    }
+                }
+                if (jobSeekerIds !== undefined) {
+                    if (Array.isArray(jobSeekerIds) && jobSeekerIds.length > 0) {
+                        newCustomFields._relationship_job_seeker_ids = jobSeekerIds;
+                    } else {
+                        delete newCustomFields._relationship_job_seeker_ids;
+                    }
+                }
+                if (jobIds !== undefined) {
+                    if (Array.isArray(jobIds) && jobIds.length > 0) {
+                        newCustomFields._relationship_job_ids = jobIds;
+                    } else {
+                        delete newCustomFields._relationship_job_ids;
+                    }
+                }
+                if (placementIds !== undefined) {
+                    if (Array.isArray(placementIds) && placementIds.length > 0) {
+                        newCustomFields._relationship_placement_ids = placementIds;
+                    } else {
+                        delete newCustomFields._relationship_placement_ids;
+                    }
+                }
+                if (opportunityIds !== undefined) {
+                    if (Array.isArray(opportunityIds) && opportunityIds.length > 0) {
+                        newCustomFields._relationship_opportunity_ids = opportunityIds;
+                    } else {
+                        delete newCustomFields._relationship_opportunity_ids;
+                    }
                 }
 
                 updateFields.push(`custom_fields = $${paramCount}`);
-                queryParams.push(typeof newCustomFields === 'string'
-                    ? newCustomFields
-                    : JSON.stringify(newCustomFields));
+                queryParams.push(JSON.stringify(newCustomFields));
                 paramCount++;
+
+                // Remove relationship IDs from updateData to avoid processing them again
+                delete updateData.hiringManagerIds;
+                delete updateData.jobSeekerIds;
+                delete updateData.jobIds;
+                delete updateData.placementIds;
+                delete updateData.opportunityIds;
             }
 
             // Process all other fields

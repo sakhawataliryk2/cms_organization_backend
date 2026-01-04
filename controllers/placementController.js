@@ -18,6 +18,36 @@ class PlacementController {
         await this.placementModel.initTable();
     }
 
+    // Validate date range (end_date must not be earlier than start_date)
+    validateDateRange(startDate, endDate) {
+        if (!startDate) {
+            return { valid: false, message: 'Start date is required' };
+        }
+
+        if (endDate) {
+            const start = new Date(startDate);
+            const end = new Date(endDate);
+
+            // Check if dates are valid
+            if (isNaN(start.getTime())) {
+                return { valid: false, message: 'Invalid start date format' };
+            }
+            if (isNaN(end.getTime())) {
+                return { valid: false, message: 'Invalid end date format' };
+            }
+
+            // Check if end_date is earlier than start_date
+            if (end < start) {
+                return { 
+                    valid: false, 
+                    message: 'End date cannot be earlier than start date' 
+                };
+            }
+        }
+
+        return { valid: true };
+    }
+
     // Create a new placement
     async create(req, res) {
         const placementData = req.body;
@@ -27,6 +57,18 @@ class PlacementController {
             return res.status(400).json({
                 success: false,
                 message: 'Job ID, Job Seeker ID, and Start Date are required'
+            });
+        }
+
+        // Validate date range
+        const dateValidation = this.validateDateRange(
+            placementData.start_date,
+            placementData.end_date
+        );
+        if (!dateValidation.valid) {
+            return res.status(400).json({
+                success: false,
+                message: dateValidation.message
             });
         }
 
@@ -208,6 +250,22 @@ class PlacementController {
                 return res.status(403).json({
                     success: false,
                     message: 'You do not have permission to update this placement'
+                });
+            }
+
+            // Validate date range if dates are being updated
+            // Use provided dates or existing dates from the placement
+            const startDate = placementData.start_date || existingPlacement.startDate;
+            // end_date might not exist in database, so check both provided value and existing placement
+            const endDate = placementData.end_date !== undefined 
+                ? placementData.end_date 
+                : (existingPlacement.endDate || null);
+
+            const dateValidation = this.validateDateRange(startDate, endDate);
+            if (!dateValidation.valid) {
+                return res.status(400).json({
+                    success: false,
+                    message: dateValidation.message
                 });
             }
 

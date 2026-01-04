@@ -33,6 +33,30 @@ class LeadController {
 
         console.log("Create lead request body:", req.body);
 
+        // Normalize custom fields (support both camelCase and snake_case)
+        if (leadData.customFields && !leadData.custom_fields) {
+            leadData.custom_fields = leadData.customFields;
+        } else if (!leadData.custom_fields) {
+            leadData.custom_fields = {};
+        }
+
+        // Ensure relationship IDs are arrays
+        if (leadData.hiringManagerIds && !Array.isArray(leadData.hiringManagerIds)) {
+            leadData.hiringManagerIds = [];
+        }
+        if (leadData.jobSeekerIds && !Array.isArray(leadData.jobSeekerIds)) {
+            leadData.jobSeekerIds = [];
+        }
+        if (leadData.jobIds && !Array.isArray(leadData.jobIds)) {
+            leadData.jobIds = [];
+        }
+        if (leadData.placementIds && !Array.isArray(leadData.placementIds)) {
+            leadData.placementIds = [];
+        }
+        if (leadData.opportunityIds && !Array.isArray(leadData.opportunityIds)) {
+            leadData.opportunityIds = [];
+        }
+
         // Basic validation
         if (!leadData.firstName || !leadData.lastName) {
             return res.status(400).json({
@@ -201,6 +225,28 @@ class LeadController {
             console.log(`Update request for lead ${id} received`);
             console.log("Request user:", req.user);
             console.log("Update data:", JSON.stringify(updateData, null, 2));
+
+            // Normalize custom fields (support both camelCase and snake_case)
+            if (updateData.customFields && !updateData.custom_fields) {
+                updateData.custom_fields = updateData.customFields;
+            }
+
+            // Ensure relationship IDs are arrays
+            if (updateData.hiringManagerIds !== undefined && !Array.isArray(updateData.hiringManagerIds)) {
+                updateData.hiringManagerIds = [];
+            }
+            if (updateData.jobSeekerIds !== undefined && !Array.isArray(updateData.jobSeekerIds)) {
+                updateData.jobSeekerIds = [];
+            }
+            if (updateData.jobIds !== undefined && !Array.isArray(updateData.jobIds)) {
+                updateData.jobIds = [];
+            }
+            if (updateData.placementIds !== undefined && !Array.isArray(updateData.placementIds)) {
+                updateData.placementIds = [];
+            }
+            if (updateData.opportunityIds !== undefined && !Array.isArray(updateData.opportunityIds)) {
+                updateData.opportunityIds = [];
+            }
 
             // Validate ID format
             if (!id || isNaN(parseInt(id))) {
