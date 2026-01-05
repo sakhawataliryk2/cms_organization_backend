@@ -35,8 +35,15 @@ class Placement {
                     overtime_exemption BOOLEAN DEFAULT false,
                     created_by INTEGER REFERENCES users(id),
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    custom_fields JSONB
                 )
+            `);
+
+            // Add custom_fields column if it doesn't exist (for existing installations)
+            await client.query(`
+                ALTER TABLE placements 
+                ADD COLUMN IF NOT EXISTS custom_fields JSONB
             `);
 
             // Create indexes for better query performance
@@ -81,7 +88,8 @@ class Placement {
             effective_date,
             effective_date_checked,
             overtime_exemption,
-            created_by
+            created_by,
+            custom_fields
         } = placementData;
 
         const client = await this.pool.connect();
@@ -89,15 +97,44 @@ class Placement {
         try {
             await client.query('BEGIN');
 
+            // Handle custom_fields - accept both customFields and custom_fields, convert object to JSON string for JSONB
+            let customFieldsJson = null;
+            const finalCustomFields = custom_fields || placementData.customFields;
+            
+            if (finalCustomFields) {
+                if (typeof finalCustomFields === 'string') {
+                    // It's already a string, validate it's valid JSON
+                    try {
+                        JSON.parse(finalCustomFields);
+                        customFieldsJson = finalCustomFields;
+                    } catch (e) {
+                        console.error("Invalid JSON string in custom_fields:", e);
+                        customFieldsJson = null;
+                    }
+                } else if (typeof finalCustomFields === 'object' && !Array.isArray(finalCustomFields) && finalCustomFields !== null) {
+                    // It's a valid object, stringify it for JSONB storage
+                    try {
+                        customFieldsJson = JSON.stringify(finalCustomFields);
+                    } catch (e) {
+                        console.error("Error stringifying custom_fields:", e);
+                        customFieldsJson = null;
+                    }
+                }
+            }
+
+            console.log("Custom fields processing for placement:");
+            console.log("  - Received custom_fields:", finalCustomFields);
+            console.log("  - Processed customFieldsJson:", customFieldsJson);
+
             const insertQuery = `
                 INSERT INTO placements (
                     job_id, job_seeker_id, status, start_date, internal_email_notification,
                     salary, placement_fee_percent, placement_fee_flat, days_guaranteed,
                     hours_per_day, hours_of_operation,
                     pay_rate, pay_rate_checked, effective_date, effective_date_checked,
-                    overtime_exemption, created_by, created_at, updated_at
+                    overtime_exemption, created_by, custom_fields, created_at, updated_at
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, NOW(), NOW())
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, NOW(), NOW())
                 RETURNING *
             `;
 
@@ -118,7 +155,8 @@ class Placement {
                 effective_date || null,
                 effective_date_checked || false,
                 overtime_exemption || false,
-                created_by || null
+                created_by || null,
+                customFieldsJson
             ];
 
             const result = await client.query(insertQuery, values);
@@ -281,7 +319,8 @@ class Placement {
             pay_rate_checked,
             effective_date,
             effective_date_checked,
-            overtime_exemption
+            overtime_exemption,
+            custom_fields
         } = placementData;
 
         const client = await this.pool.connect();
@@ -289,45 +328,118 @@ class Placement {
         try {
             await client.query('BEGIN');
 
-            const updateQuery = `
-                UPDATE placements
-                SET 
-                    status = COALESCE($1, status),
-                    start_date = COALESCE($2, start_date),
-                    internal_email_notification = COALESCE($3, internal_email_notification),
-                    salary = COALESCE($4, salary),
-                    placement_fee_percent = COALESCE($5, placement_fee_percent),
-                    placement_fee_flat = COALESCE($6, placement_fee_flat),
-                    days_guaranteed = COALESCE($7, days_guaranteed),
-                    hours_per_day = COALESCE($8, hours_per_day),
-                    hours_of_operation = COALESCE($9, hours_of_operation),
-                    pay_rate = COALESCE($10, pay_rate),
-                    pay_rate_checked = COALESCE($11, pay_rate_checked),
-                    effective_date = COALESCE($12, effective_date),
-                    effective_date_checked = COALESCE($13, effective_date_checked),
-                    overtime_exemption = COALESCE($14, overtime_exemption),
-                    updated_at = NOW()
-                WHERE id = $15
-                RETURNING *
-            `;
+            // Handle custom_fields - accept both customFields and custom_fields, convert object to JSON string for JSONB
+            let customFieldsJson = undefined; // Use undefined so COALESCE doesn't update if not provided
+            const finalCustomFields = custom_fields !== undefined ? custom_fields : placementData.customFields;
+            
+            if (finalCustomFields !== undefined) {
+                if (finalCustomFields === null) {
+                    customFieldsJson = null;
+                } else if (typeof finalCustomFields === 'string') {
+                    // It's already a string, validate it's valid JSON
+                    try {
+                        JSON.parse(finalCustomFields);
+                        customFieldsJson = finalCustomFields;
+                    } catch (e) {
+                        console.error("Invalid JSON string in custom_fields:", e);
+                        customFieldsJson = null;
+                    }
+                } else if (typeof finalCustomFields === 'object' && !Array.isArray(finalCustomFields)) {
+                    // It's a valid object, stringify it for JSONB storage
+                    try {
+                        customFieldsJson = JSON.stringify(finalCustomFields);
+                    } catch (e) {
+                        console.error("Error stringifying custom_fields:", e);
+                        customFieldsJson = null;
+                    }
+                }
+            }
 
-            const values = [
-                status,
-                start_date,
-                internal_email_notification,
-                salary,
-                placement_fee_percent,
-                placement_fee_flat,
-                days_guaranteed,
-                hours_per_day,
-                hours_of_operation,
-                pay_rate,
-                pay_rate_checked,
-                effective_date,
-                effective_date_checked,
-                overtime_exemption,
-                id
-            ];
+            // Build update query dynamically based on whether custom_fields is provided
+            let updateQuery;
+            let values;
+            
+            if (customFieldsJson !== undefined) {
+                updateQuery = `
+                    UPDATE placements
+                    SET 
+                        status = COALESCE($1, status),
+                        start_date = COALESCE($2, start_date),
+                        internal_email_notification = COALESCE($3, internal_email_notification),
+                        salary = COALESCE($4, salary),
+                        placement_fee_percent = COALESCE($5, placement_fee_percent),
+                        placement_fee_flat = COALESCE($6, placement_fee_flat),
+                        days_guaranteed = COALESCE($7, days_guaranteed),
+                        hours_per_day = COALESCE($8, hours_per_day),
+                        hours_of_operation = COALESCE($9, hours_of_operation),
+                        pay_rate = COALESCE($10, pay_rate),
+                        pay_rate_checked = COALESCE($11, pay_rate_checked),
+                        effective_date = COALESCE($12, effective_date),
+                        effective_date_checked = COALESCE($13, effective_date_checked),
+                        overtime_exemption = COALESCE($14, overtime_exemption),
+                        custom_fields = $15,
+                        updated_at = NOW()
+                    WHERE id = $16
+                    RETURNING *
+                `;
+                values = [
+                    status,
+                    start_date,
+                    internal_email_notification,
+                    salary,
+                    placement_fee_percent,
+                    placement_fee_flat,
+                    days_guaranteed,
+                    hours_per_day,
+                    hours_of_operation,
+                    pay_rate,
+                    pay_rate_checked,
+                    effective_date,
+                    effective_date_checked,
+                    overtime_exemption,
+                    customFieldsJson,
+                    id
+                ];
+            } else {
+                updateQuery = `
+                    UPDATE placements
+                    SET 
+                        status = COALESCE($1, status),
+                        start_date = COALESCE($2, start_date),
+                        internal_email_notification = COALESCE($3, internal_email_notification),
+                        salary = COALESCE($4, salary),
+                        placement_fee_percent = COALESCE($5, placement_fee_percent),
+                        placement_fee_flat = COALESCE($6, placement_fee_flat),
+                        days_guaranteed = COALESCE($7, days_guaranteed),
+                        hours_per_day = COALESCE($8, hours_per_day),
+                        hours_of_operation = COALESCE($9, hours_of_operation),
+                        pay_rate = COALESCE($10, pay_rate),
+                        pay_rate_checked = COALESCE($11, pay_rate_checked),
+                        effective_date = COALESCE($12, effective_date),
+                        effective_date_checked = COALESCE($13, effective_date_checked),
+                        overtime_exemption = COALESCE($14, overtime_exemption),
+                        updated_at = NOW()
+                    WHERE id = $15
+                    RETURNING *
+                `;
+                values = [
+                    status,
+                    start_date,
+                    internal_email_notification,
+                    salary,
+                    placement_fee_percent,
+                    placement_fee_flat,
+                    days_guaranteed,
+                    hours_per_day,
+                    hours_of_operation,
+                    pay_rate,
+                    pay_rate_checked,
+                    effective_date,
+                    effective_date_checked,
+                    overtime_exemption,
+                    id
+                ];
+            }
 
             const result = await client.query(updateQuery, values);
 
@@ -362,6 +474,21 @@ class Placement {
     formatPlacement(row) {
         if (!row) return null;
 
+        // Parse custom_fields if it's a string
+        let customFields = null;
+        if (row.custom_fields) {
+            if (typeof row.custom_fields === 'string') {
+                try {
+                    customFields = JSON.parse(row.custom_fields);
+                } catch (e) {
+                    console.error('Error parsing custom_fields:', e);
+                    customFields = {};
+                }
+            } else if (typeof row.custom_fields === 'object') {
+                customFields = row.custom_fields;
+            }
+        }
+
         return {
             id: row.id,
             jobId: row.job_id,
@@ -383,6 +510,8 @@ class Placement {
             createdBy: row.created_by,
             createdAt: row.created_at,
             updatedAt: row.updated_at,
+            customFields: customFields,
+            custom_fields: customFields, // Also include snake_case for compatibility
             // Related data
             jobTitle: row.job_title,
             jobStatus: row.job_status,
