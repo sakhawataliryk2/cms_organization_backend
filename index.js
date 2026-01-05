@@ -42,6 +42,9 @@ const HeaderConfigController = require("./controllers/headerConfigController");
 const OfficeController = require("./controllers/officeController");
 const TeamController = require("./controllers/teamController");
 const TemplateDocumentController = require("./controllers/templateDocumentController");
+//OnBoarding
+const OnboardingController = require("./controllers/onboardingController");
+const createOnboardingRouter = require("./routes/onboardingRoutes");
 
 const createAuthRouter = require("./routes/authRoutes");
 const createOrganizationRouter = require("./routes/organizationRoutes");
@@ -223,7 +226,10 @@ const getOfficeController = () => {
 const getTeamController = () => {
   return new TeamController(getPool());
 };
-
+//OnBooarding
+const getOnboardingController = () => {
+  return new OnboardingController(getPool());
+};
 // Setup nodemailer with a connection pool
 // const transporter = nodemailer.createTransporter({
 //   pool: true,
@@ -338,6 +344,12 @@ app.use(async (req, res, next) => {
         const packetModel = new Packet(getPool());
         await packetModel.initTable();
       }
+      // OnBoarding
+      if (req.path.startsWith("/api/onboarding")) {
+        const onboardingController = getOnboardingController();
+        await onboardingController.initTables();
+      }
+
 
     } catch (error) {
       console.error("Failed to initialize tables:", error.message);
@@ -477,6 +489,16 @@ app.use("/api/packets", sanitizeInputs, (req, res, next) => {
   const router = packetRoutes(getPool(), authMiddleware);
   router(req, res, next);
 });
+//ONbOARDING
+app.use("/api/onboarding", sanitizeInputs, (req, res, next) => {
+  const authMiddleware = { verifyToken: verifyToken(getPool()), checkRole };
+  const router = createOnboardingRouter(
+    getOnboardingController(),
+    authMiddleware
+  );
+  router(req, res, next);
+});
+
 
 
 // Database connection test
