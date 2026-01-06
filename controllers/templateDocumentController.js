@@ -1,4 +1,6 @@
 const TemplateDocument = require("../models/templateDocument");
+const { put } = require("@vercel/blob");
+
 
 class TemplateDocumentController {
   constructor(pool) {
@@ -51,28 +53,44 @@ class TemplateDocumentController {
     try {
       const userId = req.user?.id || null;
 
-      // multer file
       const file = req.file || null;
 
       const notification_user_ids = req.body.notification_user_ids
-        ? JSON.parse(req.body.notification_user_ids) // frontend should send JSON string
+        ? JSON.parse(req.body.notification_user_ids)
         : [];
+
+      let file_url = null;
+      if (file) {
+        const safeName = (file.originalname || "document.pdf").replace(
+          /\s+/g,
+          "_"
+        );
+        const blob = await put(
+          `template-documents/${Date.now()}_${safeName}`,
+          file.buffer,
+          { access: "public", contentType: file.mimetype }
+        );
+        file_url = blob.url;
+      }
 
       const doc = await this.model.create({
         document_name: req.body.document_name,
         category: req.body.category,
         description: req.body.description,
+
         approval_required:
           req.body.approvalRequired === "Yes" ||
           req.body.approval_required === "true",
+
         additional_docs_required:
           req.body.additionalDocsRequired === "Yes" ||
           req.body.additional_docs_required === "true",
 
-        file_name: file?.originalname,
-        file_path: file ? `/uploads/template-documents/${file.filename}` : null,
-        file_size: file?.size,
-        mime_type: file?.mimetype,
+        file_name: file?.originalname || null,
+        file_path: null, // ✅ no local uploads on Vercel
+        file_url, // ✅ store blob url
+        file_size: file?.size || null,
+        mime_type: file?.mimetype || null,
 
         notification_user_ids,
         created_by: userId,
@@ -100,15 +118,31 @@ class TemplateDocumentController {
       const notification_user_ids =
         req.body.notification_user_ids !== undefined
           ? JSON.parse(req.body.notification_user_ids)
-          : undefined; // undefined => don't touch mapping
+          : undefined;
+
+      let file_url = null;
+      if (file) {
+        const safeName = (file.originalname || "document.pdf").replace(
+          /\s+/g,
+          "_"
+        );
+        const blob = await put(
+          `template-documents/${Date.now()}_${safeName}`,
+          file.buffer,
+          { access: "public", contentType: file.mimetype }
+        );
+        file_url = blob.url;
+      }
 
       const updated = await this.model.update(id, {
         document_name: req.body.document_name,
         category: req.body.category,
         description: req.body.description,
+
         approval_required: req.body.approvalRequired
           ? req.body.approvalRequired === "Yes"
           : undefined,
+
         additional_docs_required: req.body.additionalDocsRequired
           ? req.body.additionalDocsRequired === "Yes"
           : undefined,
@@ -116,7 +150,8 @@ class TemplateDocumentController {
         ...(file
           ? {
               file_name: file.originalname,
-              file_path: `/uploads/template-documents/${file.filename}`,
+              file_path: null,
+              file_url, // ✅ new url
               file_size: file.size,
               mime_type: file.mimetype,
             }
@@ -194,50 +229,48 @@ class TemplateDocumentController {
       });
     }
   }
-async saveMappings(req, res) {
-  try {
-    const docId = req.params.id;
+  async saveMappings(req, res) {
+    try {
+      const docId = req.params.id;
 
-    const doc = await this.model.getById(docId);
-    if (!doc)
-      return res.status(404).json({ success: false, message: "Not found" });
+      const doc = await this.model.getById(docId);
+      if (!doc)
+        return res.status(404).json({ success: false, message: "Not found" });
 
-    const incoming = Array.isArray(req.body.fields) ? req.body.fields : [];
+      const incoming = Array.isArray(req.body.fields) ? req.body.fields : [];
 
-    // ✅ normalize + ensure x,y,w,h
-    const fields = incoming.map((f, idx) => ({
-      field_id: f.field_id ?? null,
-      field_name: f.field_name ?? f.source_field_name ?? null,
-      field_label: f.field_label ?? f.source_field_label ?? null,
+      const fields = incoming.map((f, idx) => ({
+        field_id: f.field_id ?? null,
+        field_name: f.field_name ?? f.source_field_name ?? null,
+        field_label: f.field_label ?? f.source_field_label ?? null,
 
-      field_type: f.field_type ?? f.fieldType ?? "Text Input",
-      who_fills: f.who_fills ?? f.whoFills ?? "Candidate",
-      is_required: f.is_required ?? (f.required === "Yes") ?? false,
-      max_characters: f.max_characters ?? f.maxChars ?? 255,
-      format: f.format ?? "None",
-      populate_with_data: f.populate_with_data ?? (f.populateWithData === "Yes") ?? false,
-      data_flow_back: f.data_flow_back ?? (f.dataFlowBack === "Yes") ?? false,
-      sort_order: f.sort_order ?? idx,
+        field_type: f.field_type ?? f.fieldType ?? "Text Input",
+        who_fills: f.who_fills ?? f.whoFills ?? "Candidate",
+        is_required: f.is_required ?? f.required === "Yes" ?? false,
+        max_characters: f.max_characters ?? f.maxChars ?? 255,
+        format: f.format ?? "None",
+        populate_with_data:
+          f.populate_with_data ?? f.populateWithData === "Yes" ?? false,
+        data_flow_back: f.data_flow_back ?? f.dataFlowBack === "Yes" ?? false,
+        sort_order: f.sort_order ?? idx,
 
-     
-      x: Number.isFinite(Number(f.x)) ? Number(f.x) : 0,
-      y: Number.isFinite(Number(f.y)) ? Number(f.y) : 0,
-      w: Number.isFinite(Number(f.w)) ? Number(f.w) : 220,
-      h: Number.isFinite(Number(f.h)) ? Number(f.h) : 44,
-    }));
+        x: Number.isFinite(Number(f.x)) ? Number(f.x) : 0,
+        y: Number.isFinite(Number(f.y)) ? Number(f.y) : 0,
+        w: Number.isFinite(Number(f.w)) ? Number(f.w) : 220,
+        h: Number.isFinite(Number(f.h)) ? Number(f.h) : 44,
+      }));
 
-    await this.model.replaceMappings(docId, fields);
+      await this.model.replaceMappings(docId, fields);
 
-    return res.json({ success: true, message: "Mappings saved" });
-  } catch (e) {
-    return res.status(500).json({
-      success: false,
-      message: "Failed to save mappings",
-      error: process.env.NODE_ENV === "production" ? undefined : e.message,
-    });
+      return res.json({ success: true, message: "Mappings saved" });
+    } catch (e) {
+      return res.status(500).json({
+        success: false,
+        message: "Failed to save mappings",
+        error: process.env.NODE_ENV === "production" ? undefined : e.message,
+      });
+    }
   }
-}
-
 }
 
 module.exports = TemplateDocumentController;

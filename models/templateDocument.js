@@ -19,6 +19,7 @@ class TemplateDocument {
 
           file_name VARCHAR(255),
           file_path TEXT,
+          file_url TEXT,
           file_size INTEGER,
           mime_type VARCHAR(100),
 
@@ -87,7 +88,10 @@ h INTEGER DEFAULT 0,
     ADD COLUMN IF NOT EXISTS w INTEGER DEFAULT 0,
     ADD COLUMN IF NOT EXISTS h INTEGER DEFAULT 0
 `);
-
+      await client.query(`
+  ALTER TABLE template_documents
+    ADD COLUMN IF NOT EXISTS file_url TEXT
+`);
       return true;
     } finally {
       if (client) client.release();
@@ -140,28 +144,30 @@ h INTEGER DEFAULT 0,
       await client.query("BEGIN");
 
       const q = `
-        INSERT INTO template_documents (
-          document_name, category, description,
-          approval_required, additional_docs_required,
-          file_name, file_path, file_size, mime_type,
-          created_by, status, created_at, updated_at
-        )
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,TRUE,NOW(),NOW())
-        RETURNING *
-      `;
+  INSERT INTO template_documents (
+    document_name, category, description,
+    approval_required, additional_docs_required,
+    file_name, file_path, file_url, file_size, mime_type,
+    created_by, status, created_at, updated_at
+  )
+  VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,TRUE,NOW(),NOW())
+  RETURNING *
+`;
 
-      const values = [
-        data.document_name,
-        data.category,
-        data.description || null,
-        !!data.approval_required,
-        !!data.additional_docs_required,
-        data.file_name || null,
-        data.file_path || null,
-        data.file_size || null,
-        data.mime_type || null,
-        data.created_by || null,
-      ];
+
+     const values = [
+       data.document_name,
+       data.category,
+       data.description || null,
+       !!data.approval_required,
+       !!data.additional_docs_required,
+       data.file_name || null,
+       data.file_path || null,
+       data.file_url || null,
+       data.file_size || null,
+       data.mime_type || null,
+       data.created_by || null,
+     ];
 
       const inserted = await client.query(q, values);
       const doc = inserted.rows[0];
@@ -198,38 +204,42 @@ h INTEGER DEFAULT 0,
     try {
       await client.query("BEGIN");
 
-      const q = `
-        UPDATE template_documents
-        SET document_name = COALESCE($1, document_name),
-            category = COALESCE($2, category),
-            description = COALESCE($3, description),
-            approval_required = COALESCE($4, approval_required),
-            additional_docs_required = COALESCE($5, additional_docs_required),
-            file_name = COALESCE($6, file_name),
-            file_path = COALESCE($7, file_path),
-            file_size = COALESCE($8, file_size),
-            mime_type = COALESCE($9, mime_type),
-            updated_at = NOW()
-        WHERE id = $10
-        RETURNING *
-      `;
+    const q = `
+  UPDATE template_documents
+  SET document_name = COALESCE($1, document_name),
+      category = COALESCE($2, category),
+      description = COALESCE($3, description),
+      approval_required = COALESCE($4, approval_required),
+      additional_docs_required = COALESCE($5, additional_docs_required),
+      file_name = COALESCE($6, file_name),
+      file_path = COALESCE($7, file_path),
+      file_url = COALESCE($8, file_url),
+      file_size = COALESCE($9, file_size),
+      mime_type = COALESCE($10, mime_type),
+      updated_at = NOW()
+  WHERE id = $11
+  RETURNING *
+`;
 
-      const r = await client.query(q, [
-        data.document_name ?? null,
-        data.category ?? null,
-        data.description ?? null,
-        typeof data.approval_required === "boolean"
-          ? data.approval_required
-          : null,
-        typeof data.additional_docs_required === "boolean"
-          ? data.additional_docs_required
-          : null,
-        data.file_name ?? null,
-        data.file_path ?? null,
-        data.file_size ?? null,
-        data.mime_type ?? null,
-        id,
-      ]);
+
+     const r = await client.query(q, [
+       data.document_name ?? null,
+       data.category ?? null,
+       data.description ?? null,
+       typeof data.approval_required === "boolean"
+         ? data.approval_required
+         : null,
+       typeof data.additional_docs_required === "boolean"
+         ? data.additional_docs_required
+         : null,
+       data.file_name ?? null,
+       data.file_path ?? null,
+       data.file_url ?? null,
+       data.file_size ?? null,
+       data.mime_type ?? null,
+       id,
+     ]);
+
 
       if (Array.isArray(data.notification_user_ids)) {
         await client.query(
