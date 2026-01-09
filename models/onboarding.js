@@ -1,13 +1,16 @@
+// models/onboarding.js
+const crypto = require("crypto");
+const bcrypt = require("bcryptjs");
+
 class Onboarding {
   constructor(pool) {
     this.pool = pool;
   }
 
   async initTables() {
-    let client;
+    const client = await this.pool.connect();
     try {
-      client = await this.pool.connect();
-
+      // 1) onboarding_sends
       await client.query(`
         CREATE TABLE IF NOT EXISTS onboarding_sends (
           id SERIAL PRIMARY KEY,
@@ -18,6 +21,7 @@ class Onboarding {
         )
       `);
 
+      // 2) onboarding_send_items
       await client.query(`
         CREATE TABLE IF NOT EXISTS onboarding_send_items (
           id SERIAL PRIMARY KEY,
@@ -29,25 +33,61 @@ class Onboarding {
           UNIQUE(onboarding_send_id, template_document_id)
         )
       `);
+      // ✅ If table already existed (old version), make sure required columns exist
+        await client.query(`
+          ALTER TABLE onboarding_send_items
+          ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'SENT'
+        `);
 
+        await client.query(`
+          ALTER TABLE onboarding_send_items
+          ADD COLUMN IF NOT EXISTS sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        `);
+
+        await client.query(`
+          ALTER TABLE onboarding_send_items
+          ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP NULL
+        `);
+
+
+      // 3) portal accounts table (job seeker login)
       await client.query(`
-        CREATE INDEX IF NOT EXISTS idx_onboarding_sends_job_seeker 
+        CREATE TABLE IF NOT EXISTS job_seeker_portal_accounts (
+          id SERIAL PRIMARY KEY,
+          job_seeker_id INTEGER NOT NULL UNIQUE REFERENCES job_seekers(id) ON DELETE CASCADE,
+          email VARCHAR(255) NOT NULL,
+          password_hash TEXT NOT NULL,
+          must_reset_password BOOLEAN DEFAULT TRUE,
+          created_by INTEGER REFERENCES users(id),
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      await client.query(`
+  ALTER TABLE job_seeker_portal_accounts
+  ADD COLUMN IF NOT EXISTS must_reset_password BOOLEAN NOT NULL DEFAULT true
+`);
+
+
+      // indexes
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS idx_onboarding_sends_job_seeker
         ON onboarding_sends(job_seeker_id)
       `);
 
       await client.query(`
-        CREATE INDEX IF NOT EXISTS idx_onboarding_send_items_send 
+        CREATE INDEX IF NOT EXISTS idx_onboarding_send_items_send
         ON onboarding_send_items(onboarding_send_id)
       `);
 
       await client.query(`
-        CREATE INDEX IF NOT EXISTS idx_onboarding_send_items_status 
+        CREATE INDEX IF NOT EXISTS idx_onboarding_send_items_status
         ON onboarding_send_items(status)
       `);
 
       return true;
     } finally {
-      if (client) client.release();
+      client.release();
     }
   }
 
@@ -69,8 +109,10 @@ class Onboarding {
           `,
           [packet_ids.map(Number)]
         );
-        for (const row of r.rows)
+
+        for (const row of r.rows) {
           packetDocIds.push(Number(row.template_document_id));
+        }
       }
 
       const direct = (Array.isArray(document_ids) ? document_ids : [])
@@ -84,30 +126,80 @@ class Onboarding {
     }
   }
 
-  async createSend({
-    job_seeker_id,
-    recipient_email,
-    created_by,
-    template_document_ids,
-  }) {
+  async hasAnySend(job_seeker_id) {
+    const client = await this.pool.connect();
+    try {
+      const r = await client.query(
+        `SELECT 1 FROM onboarding_sends WHERE job_seeker_id=$1 LIMIT 1`,
+        [Number(job_seeker_id)]
+      );
+      return r.rowCount > 0;
+    } finally {
+      client.release();
+    }
+  }
+
+  generateTempPassword() {
+    // readable temp password
+    return crypto.randomBytes(6).toString("base64").replace(/[^a-zA-Z0-9]/g, "").slice(0, 10);
+  }
+
+  async getOrCreatePortalAccount({ job_seeker_id, email, created_by }) {
+    const client = await this.pool.connect();
+    try {
+      // already exists?
+      const existing = await client.query(
+        `SELECT id, email FROM job_seeker_portal_accounts WHERE job_seeker_id=$1`,
+        [Number(job_seeker_id)]
+      );
+
+      if (existing.rowCount) {
+        return { created: false, tempPassword: null };
+      }
+
+      const tempPassword = this.generateTempPassword();
+      const password_hash = await bcrypt.hash(tempPassword, 10);
+
+      // ✅ IMPORTANT FIX:
+      // columns count == values count
+      await client.query(
+        `
+        INSERT INTO job_seeker_portal_accounts
+          (job_seeker_id, email, password_hash, must_reset_password, created_by)
+        VALUES ($1, $2, $3, TRUE, $4)
+        `,
+        [Number(job_seeker_id), String(email || ""), password_hash, created_by || null]
+      );
+
+      return { created: true, tempPassword };
+    } finally {
+      client.release();
+    }
+  }
+
+  async createSend({ job_seeker_id, recipient_email, created_by, template_document_ids }) {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
 
+      // ✅ IMPORTANT FIX:
+      // do NOT include created_at in insert columns (it has default)
       const sendRes = await client.query(
         `
-        INSERT INTO onboarding_sends (job_seeker_id, recipient_email, created_by, created_at)
-        VALUES ($1,$2,$3,NOW())
+        INSERT INTO onboarding_sends (job_seeker_id, recipient_email, created_by)
+        VALUES ($1, $2, $3)
         RETURNING *
         `,
-        [job_seeker_id, recipient_email, created_by || null]
+        [Number(job_seeker_id), String(recipient_email || ""), created_by || null]
       );
 
       const sendRow = sendRes.rows[0];
 
-      if (template_document_ids.length) {
+      if (Array.isArray(template_document_ids) && template_document_ids.length) {
+        const ids = template_document_ids.map(Number).filter((n) => n > 0);
+
         const values = [];
-        const placeholders = template_document_ids
+        const placeholders = ids
           .map((docId, i) => {
             const base = i * 2;
             values.push(sendRow.id, docId);
@@ -117,7 +209,7 @@ class Onboarding {
 
         await client.query(
           `
-          INSERT INTO onboarding_send_items (onboarding_send_id, template_document_id, status, sent_at)
+          INSERT INTO onboarding_send_items (onboarding_send_id, template_document_id)
           VALUES ${placeholders}
           ON CONFLICT (onboarding_send_id, template_document_id) DO NOTHING
           `,
@@ -138,10 +230,7 @@ class Onboarding {
   async getSendDetails(sendId) {
     const client = await this.pool.connect();
     try {
-      const s = await client.query(
-        `SELECT * FROM onboarding_sends WHERE id=$1`,
-        [sendId]
-      );
+      const s = await client.query(`SELECT * FROM onboarding_sends WHERE id=$1`, [Number(sendId)]);
       const send = s.rows[0];
       if (!send) return null;
 
@@ -158,7 +247,7 @@ class Onboarding {
         WHERE osi.onboarding_send_id = $1
         ORDER BY osi.id ASC
         `,
-        [sendId]
+        [Number(sendId)]
       );
 
       return { send, items: items.rows || [] };
@@ -184,13 +273,15 @@ class Onboarding {
         WHERE os.job_seeker_id = $1
         ORDER BY osi.sent_at DESC
         `,
-        [job_seeker_id]
+        [Number(job_seeker_id)]
       );
       return r.rows || [];
     } finally {
       client.release();
     }
   }
+  
+
 }
 
 module.exports = Onboarding;

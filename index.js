@@ -69,6 +69,10 @@ const createScrapeRouter = require("./routes/scrapeRoutes");
 
 const packetRoutes = require("./routes/packetRoutes");
 
+// Job Sekker Portal
+const jobseekerPortalAuthRoutes = require("./routes/jobseekerPortalAuthRoutes");
+const jobseekerPortalDocumentsRoutes = require("./routes/jobseekerPortalDocumentsRoutes");
+
 const { notFound, errorHandler } = require("./middleware/errorMiddleware");
 const { sanitizeInputs } = require("./middleware/validationMiddleware");
 const { verifyToken, checkRole } = require("./middleware/authMiddleware");
@@ -231,6 +235,7 @@ const getTeamController = () => {
 const getOnboardingController = () => {
   return new OnboardingController(getPool());
 };
+
 // Setup nodemailer with a connection pool
 // const transporter = nodemailer.createTransporter({
 //   pool: true,
@@ -350,7 +355,16 @@ app.use(async (req, res, next) => {
         const onboardingController = getOnboardingController();
         await onboardingController.initTables();
       }
+      // Job Seeker Portal (login tables)
+    if (req.path.startsWith("/api/jobseeker-portal")) {
+  const JobseekerPortalAuthController = require("./controllers/jobseekerPortalAuthController");
+  const c = new JobseekerPortalAuthController(getPool());
+  await c.initTables();
 
+  const Onboarding = require("./models/onboarding");
+  const ob = new Onboarding(getPool());
+  await ob.initTables();
+}
 
     } catch (error) {
       console.error("Failed to initialize tables:", error.message);
@@ -499,6 +513,17 @@ app.use("/api/onboarding", sanitizeInputs, (req, res, next) => {
   );
   router(req, res, next);
 });
+// Jobseeker Portal Auth Routes
+app.use("/api/jobseeker-portal/auth", sanitizeInputs, (req, res, next) => {
+  const router = jobseekerPortalAuthRoutes(getPool());
+  router(req, res, next);
+});
+
+app.use("/api/jobseeker-portal", sanitizeInputs, (req, res, next) => {
+  const router = jobseekerPortalDocumentsRoutes(getPool());
+  router(req, res, next);
+});
+
 
 
 
