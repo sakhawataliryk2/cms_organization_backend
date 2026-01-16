@@ -11,6 +11,7 @@ class HiringManagerController {
         this.addNote = this.addNote.bind(this);
         this.getNotes = this.getNotes.bind(this);
         this.getHistory = this.getHistory.bind(this);
+        this.getByOrganization = this.getByOrganization.bind(this);
     }
 
     // Initialize database tables

@@ -673,6 +673,38 @@ class HiringManager {
             client.release();
         }
     }
+
+    // Get hiring managers by organization ID
+    async getByOrganization(organizationId, userId = null) {
+        const client = await this.pool.connect();
+        try {
+            let query = `
+                SELECT hm.*, u.name as created_by_name,
+                CONCAT(hm.last_name, ', ', hm.first_name) as full_name,
+                o.name as organization_name_from_org
+                FROM hiring_managers hm
+                LEFT JOIN users u ON hm.created_by = u.id
+                LEFT JOIN organizations o ON hm.organization_id = o.id
+                WHERE hm.organization_id = $1
+            `;
+
+            const values = [organizationId];
+
+            if (userId) {
+                query += ` AND hm.created_by = $2`;
+                values.push(userId);
+            }
+
+            query += ` ORDER BY hm.created_at DESC`;
+
+            const result = await client.query(query, values);
+            return result.rows;
+        } catch (error) {
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
 }
 
 module.exports = HiringManager;

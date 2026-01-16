@@ -11,6 +11,10 @@ function createHiringManagerRouter(hiringManagerController, authMiddleware) {
     // (admins see all, regular users see only their own)
     router.get('/', hiringManagerController.getAll);
 
+    // Get hiring managers by organization ID
+    // Must be before /:id route to avoid matching "organization" as an ID
+    router.get('/organization/:organizationId', hiringManagerController.getByOrganization);
+
     // Get hiring manager by ID 
     // (admins can see any, regular users only their own)
     router.get('/:id', hiringManagerController.getById);
