@@ -69,6 +69,16 @@ class CustomFieldController {
                 });
             }
 
+            // Critical: Validate Hidden & Required mutual exclusivity
+            const finalIsRequired = Boolean(isRequired);
+            const finalIsHidden = Boolean(isHidden);
+            if (finalIsRequired === true && finalIsHidden === true) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'A field cannot be both Hidden and Required. Fields must be either visible (not hidden) to be required, or hidden (not required).'
+                });
+            }
+
             // Get user ID from auth middleware
             const userId = req.user.id;
 
@@ -276,6 +286,39 @@ class CustomFieldController {
             }
             if (sanitizedData.isHidden !== undefined) {
                 sanitizedData.isHidden = Boolean(sanitizedData.isHidden);
+            }
+
+            // 8a. Validate Hidden & Required mutual exclusivity
+            // Get current field state to check if both are being set
+            const currentField = await this.customFieldModel.getById(id);
+            if (!currentField) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Custom field not found'
+                });
+            }
+
+            // Determine final values (use updateData if provided, otherwise use current)
+            const finalIsRequired = sanitizedData.isRequired !== undefined 
+                ? sanitizedData.isRequired 
+                : currentField.is_required;
+            const finalIsHidden = sanitizedData.isHidden !== undefined 
+                ? sanitizedData.isHidden 
+                : currentField.is_hidden;
+
+            // Critical: A field cannot be both Hidden and Required
+            if (finalIsRequired === true && finalIsHidden === true) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'A field cannot be both Hidden and Required. Fields must be either visible (not hidden) to be required, or hidden (not required).'
+                });
+            }
+
+            // Auto-correct: If both would be true, prefer setting hidden to false
+            if (sanitizedData.isRequired !== undefined && sanitizedData.isRequired === true) {
+                sanitizedData.isHidden = false;
+            } else if (sanitizedData.isHidden !== undefined && sanitizedData.isHidden === true) {
+                sanitizedData.isRequired = false;
             }
 
             // 9. Sanitize string fields

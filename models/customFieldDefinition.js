@@ -61,6 +61,14 @@ class CustomFieldDefinition {
                 )
             `);
 
+            // Auto-correct existing invalid records: fields that are both Hidden and Required
+            // Preference: Keep required=true, set hidden=false
+            await client.query(`
+                UPDATE custom_field_definitions
+                SET is_hidden = false, updated_at = CURRENT_TIMESTAMP
+                WHERE is_required = true AND is_hidden = true
+            `);
+
             console.log('✅ Custom field definitions table initialized successfully');
             return true;
         } catch (error) {
@@ -189,6 +197,26 @@ class CustomFieldDefinition {
             }
 
             const oldValues = currentFieldResult.rows[0];
+
+            // Critical: Validate Hidden & Required mutual exclusivity before update
+            const finalIsRequired = updateData.isRequired !== undefined 
+                ? updateData.isRequired 
+                : oldValues.is_required;
+            const finalIsHidden = updateData.isHidden !== undefined 
+                ? updateData.isHidden 
+                : oldValues.is_hidden;
+
+            // Enforce mutual exclusivity: if both would be true, prefer setting hidden to false
+            if (finalIsRequired === true && finalIsHidden === true) {
+                if (updateData.isRequired !== undefined && updateData.isRequired === true) {
+                    updateData.isHidden = false;
+                } else if (updateData.isHidden !== undefined && updateData.isHidden === true) {
+                    updateData.isRequired = false;
+                } else {
+                    // Both are being set or both already true - prefer keeping required, unset hidden
+                    updateData.isHidden = false;
+                }
+            }
 
             // Build the update query dynamically
             const updateFields = [];
