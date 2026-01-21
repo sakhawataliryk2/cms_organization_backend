@@ -7,6 +7,7 @@ class TearsheetController {
     this.create = this.create.bind(this);
     this.getAll = this.getAll.bind(this);
     this.getRecords = this.getRecords.bind(this);
+    this.delete = this.delete.bind(this);
   }
 
   async initTables() {
@@ -112,6 +113,40 @@ class TearsheetController {
         success: false,
         message: "Failed to fetch tearsheet records",
         error: process.env.NODE_ENV === "production" ? undefined : error.message,
+      });
+    }
+  }
+
+  async delete(req, res) {
+    try {
+      const { id } = req.params;
+
+      if (!id || isNaN(parseInt(id))) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid tearsheet ID',
+        });
+      }
+
+      const tearsheet = await this.tearsheetModel.delete(parseInt(id));
+
+      if (!tearsheet) {
+        return res.status(404).json({
+          success: false,
+          message: 'Tearsheet not found',
+        });
+      }
+
+      return res.json({
+        success: true,
+        message: 'Tearsheet deleted successfully',
+      });
+    } catch (error) {
+      console.error('Error deleting tearsheet:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to delete tearsheet',
+        error: process.env.NODE_ENV === 'production' ? undefined : error.message,
       });
     }
   }

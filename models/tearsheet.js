@@ -224,6 +224,20 @@ class Tearsheet {
     }
   }
 
+  async delete(id) {
+    const client = await this.pool.connect();
+    try {
+      // Delete the tearsheet - junction tables will cascade delete automatically
+      const result = await client.query(
+        `DELETE FROM tearsheets WHERE id = $1 RETURNING *`,
+        [id]
+      );
+      return result.rows[0] || null;
+    } finally {
+      client.release();
+    }
+  }
+
 }
 
 module.exports = Tearsheet;
