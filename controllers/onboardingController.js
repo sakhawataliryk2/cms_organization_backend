@@ -1,6 +1,8 @@
 // controllers/onboardingController.js
 const Onboarding = require("../models/onboarding");
 const { sendMail } = require("../services/emailService");
+const EmailTemplateModel = require("../models/emailTemplateModel");
+const { renderTemplate, escapeHtml } = require("../utils/templateRenderer");
 
 function esc(s = "") {
   return String(s)
@@ -8,7 +10,6 @@ function esc(s = "") {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;");
 }
-
 function internalEmailHtml({ jobSeekerName, sentBy, docs }) {
   const list = docs.map((d) => `<li>${esc(d)}</li>`).join("");
   return `
@@ -21,7 +22,6 @@ function internalEmailHtml({ jobSeekerName, sentBy, docs }) {
     </div>
   `;
 }
-
 function jobSeekerEmailHtmlFirstTime({ portalUrl, username, tempPassword }) {
   return `
     <div>
@@ -39,7 +39,6 @@ function jobSeekerEmailHtmlFirstTime({ portalUrl, username, tempPassword }) {
     </div>
   `;
 }
-
 function jobSeekerEmailHtmlRepeat({ portalUrl }) {
   return `
     <div>
@@ -63,11 +62,28 @@ class OnboardingController {
   constructor(pool) {
     this.pool = pool;
     this.onboardingModel = new Onboarding(pool);
+    this.emailTemplateModel = new EmailTemplateModel(pool);
   }
 
   async initTables() {
     return this.onboardingModel.initTables();
   }
+
+  async buildEmail(type, vars, safeKeys = []) {
+  const tpl = await this.emailTemplateModel.getTemplateByType(type);
+  if (!tpl) throw new Error(`Missing email template: ${type}`);
+
+  const subject = renderTemplate(tpl.subject, vars, safeKeys);
+
+  let html = renderTemplate(tpl.body, vars, safeKeys);
+
+  html = html
+    .replace(/\r\n/g, "\n")
+    .replace(/\n/g, "<br/>");
+
+  return { subject, html };
+}
+
 
   // POST /api/onboarding/send
   send = async (req, res, next) => {
@@ -75,7 +91,9 @@ class OnboardingController {
       const { job_seeker_id, packet_ids = [], document_ids = [] } = req.body;
 
       if (!job_seeker_id) {
-        return res.status(400).json({ success: false, message: "job_seeker_id is required" });
+        return res
+          .status(400)
+          .json({ success: false, message: "job_seeker_id is required" });
       }
 
       const senderUserId = req.user?.id || null;
@@ -96,10 +114,14 @@ class OnboardingController {
       }
 
       if (!jobSeeker?.email) {
-        return res.status(400).json({ success: false, message: "Job seeker email missing" });
+        return res
+          .status(400)
+          .json({ success: false, message: "Job seeker email missing" });
       }
 
-      const jobSeekerName = `${jobSeeker.first_name || ""} ${jobSeeker.last_name || ""}`.trim();
+      const jobSeekerName = `${jobSeeker.first_name || ""} ${
+        jobSeeker.last_name || ""
+      }`.trim();
 
       // Resolve docs from packets + direct docs
       const templateDocIds = await this.onboardingModel.resolveTemplateDocIds({
@@ -108,15 +130,19 @@ class OnboardingController {
       });
 
       if (!templateDocIds.length) {
-        return res.status(400).json({ success: false, message: "No documents found in selection" });
+        return res
+          .status(400)
+          .json({ success: false, message: "No documents found in selection" });
       }
 
       // FIRST TIME?
-      const alreadySentBefore = await this.onboardingModel.hasAnySend(Number(job_seeker_id));
+      const alreadySentBefore = await this.onboardingModel.hasAnySend(
+        Number(job_seeker_id)
+      );
       const isFirstTime = !alreadySentBefore;
 
-            // Create portal account ONLY first time
-        let tempPassword = null;
+      // Create portal account ONLY first time
+      let tempPassword = null;
 
       if (isFirstTime) {
         console.log("Creating portal account for job seeker:", job_seeker_id);
@@ -127,13 +153,9 @@ class OnboardingController {
           created_by: senderUserId,
         });
 
-        console.log("PORTAL ACCOUNT:", portal);  
-
-        tempPassword = portal.tempPassword;
+        tempPassword = portal?.tempPassword || null;
         console.log("Temporary password received:", tempPassword);
       }
-
-
 
       // Create send log
       const sendRow = await this.onboardingModel.createSend({
@@ -145,49 +167,75 @@ class OnboardingController {
 
       const details = await this.onboardingModel.getSendDetails(sendRow.id);
       const docNames = (details?.items || []).map((x) => x.document_name);
+      
 
       const portalUrl =
-      process.env.PORTAL_LOGIN_URL ||
-      `${process.env.APP_PUBLIC_URL}/job-seeker-portal/login`;
-      console.log('portalUrl');
+        process.env.PORTAL_LOGIN_URL ||
+        `${process.env.APP_PUBLIC_URL}/job-seeker-portal/login`;
+
+      console.log("portalUrl:", portalUrl);
 
       // Internal recipients
-      const internalList = (process.env.INTERNAL_ONBOARDING_EMAILS || "")
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean);
+      // const internalList = (process.env.INTERNAL_ONBOARDING_EMAILS || "")
+      //   .split(",")
+      //   .map((s) => s.trim())
+      //   .filter(Boolean);
+     const internalList = ["sehrishsafder66@gmail.com"];
 
-      // 1) Internal email
-      if (internalList.length) {
-        await sendMail({
-          to: internalList.join(","),
-          subject: "Document Sent",
-          html: internalEmailHtml({
-            jobSeekerName,
-            sentBy: senderName,
-            docs: docNames,
-          }),
-        });
-      }
+      const docsList = `<ul>${docNames
+        .map((n) => `<li>${escapeHtml(n)}</li>`)
+        .join("")}</ul>`;
 
-      // 2) Job seeker email
+      const internalEmail = await this.buildEmail(
+        "ONBOARDING_INTERNAL_SENT",
+        {
+          jobSeekerName,
+          sentBy: senderName,
+          docsList,
+        },
+        ["docsList"] 
+      );
+
+      await sendMail({
+        to: internalList.join(","),
+        subject: internalEmail.subject,
+        html: internalEmail.html,
+      });
+
+
+      // 2) Job seeker email (DB template)
       if (isFirstTime) {
-        await sendMail({
-          to: jobSeeker.email,
-          subject: "Onboarding Documents - Portal Access",
-          html: jobSeekerEmailHtmlFirstTime({
-            portalUrl,
-            username: jobSeeker.email,
-            tempPassword: tempPassword || "Use Forgot Password",
-          }),
-        });
-      } else {
-        await sendMail({
-          to: jobSeeker.email,
-          subject: "Onboarding Documents",
-          html: jobSeekerEmailHtmlRepeat({ portalUrl }),
-        });
-      }
+      const email = await this.buildEmail(
+        "ONBOARDING_JOBSEEKER_FIRST_TIME",
+        {
+          portalUrl,
+          username: jobSeeker.email,
+          tempPassword: tempPassword || "Use Forgot Password",
+        },
+        ["portalUrl"]
+      );
+
+
+      await sendMail({
+        to: jobSeeker.email,
+        subject: email.subject,
+        html: email.html,
+      });
+    } else {
+
+     const email = await this.buildEmail(
+      "ONBOARDING_JOBSEEKER_REPEAT",
+      { portalUrl },
+      ["portalUrl"]
+    );
+
+      await sendMail({
+        to: jobSeeker.email,
+        subject: email.subject,
+        html: email.html,
+      });
+    }
+
 
       return res.json({
         success: true,

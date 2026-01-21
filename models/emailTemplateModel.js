@@ -6,29 +6,41 @@ class EmailTemplateModel {
   }
 
   // Initialize the table if it doesn't exist
-  async initTables() {
-    const client = await this.pool.connect();
-    try {
-      const createTableQuery = `
-        CREATE TABLE IF NOT EXISTS email_templates (
-            id SERIAL PRIMARY KEY,
-            template_name VARCHAR(255) NOT NULL,
-            subject VARCHAR(255) NOT NULL,
-            body TEXT NOT NULL,
-            type VARCHAR(50) NOT NULL, -- 'internal' or 'job_seeker'
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-      `;
-      await client.query(createTableQuery);
-      console.log("✅ Email templates table initialized.");
-    } catch (err) {
-      console.error("❌ Error initializing email_templates table:", err);
-      throw err;
-    } finally {
-      client.release();
-    }
+async initTables() {
+  const client = await this.pool.connect();
+  try {
+    const createTableQuery = `
+      CREATE TABLE IF NOT EXISTS email_templates (
+          id SERIAL PRIMARY KEY,
+          template_name VARCHAR(255) NOT NULL,
+          subject VARCHAR(255) NOT NULL,
+          body TEXT NOT NULL,
+          type VARCHAR(50) NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `;
+    await client.query(createTableQuery);
+
+    await client.query(`
+      ALTER TABLE email_templates
+      ALTER COLUMN type TYPE VARCHAR(80);
+    `);
+
+    await client.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS email_templates_type_unique
+      ON email_templates(type);
+    `);
+ 
+    console.log("Email templates table initialized + upgraded.");
+  } catch (err) {
+    console.error("Error initializing email_templates table:", err);
+    throw err;
+  } finally {
+    client.release();
   }
+}
+
 
   // Create a new email template
   async createTemplate({ template_name, subject, body, type }) {
@@ -46,6 +58,18 @@ class EmailTemplateModel {
       client.release();
     }
   }
+
+async getTemplateByType(type) {
+  const client = await this.pool.connect();
+  try {
+    const query = `SELECT * FROM email_templates WHERE type = $1 ORDER BY id DESC LIMIT 1;`;
+    const res = await client.query(query, [type]);
+    return res.rows[0] || null;
+  } finally {
+    client.release();
+  }
+
+}
 
   // List all templates
   async getAllTemplates() {
