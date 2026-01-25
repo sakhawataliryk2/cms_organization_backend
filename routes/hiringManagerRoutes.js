@@ -34,8 +34,22 @@ function createHiringManagerRouter(hiringManagerController, authMiddleware) {
     router.post('/:id/notes', hiringManagerController.addNote);
     router.get('/:id/notes', hiringManagerController.getNotes);
 
-    // Route for history
+    // History route
     router.get('/:id/history', hiringManagerController.getHistory);
+
+    // Document routes
+    router.get('/:id/documents', hiringManagerController.getDocuments);
+    router.post('/:id/documents', hiringManagerController.addDocument);
+    router.get('/:id/documents/:documentId', hiringManagerController.getDocument);
+    router.put('/:id/documents/:documentId', hiringManagerController.updateDocument);
+    router.delete('/:id/documents/:documentId', hiringManagerController.deleteDocument);
+
+    // Routes for delete requests
+    const deleteRequestController = hiringManagerController.deleteRequestController;
+    if (deleteRequestController) {
+        router.get('/:id/delete-request', deleteRequestController.getByRecord);
+        router.post('/:id/delete-request', deleteRequestController.create);
+    }
 
     return router;
 }

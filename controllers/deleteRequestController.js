@@ -1,12 +1,13 @@
-// controllers/deleteRequestController.js
 const DeleteRequest = require("../models/deleteRequest");
 const Organization = require("../models/organization");
+const HiringManager = require("../models/hiringManager");
 const nodemailer = require("nodemailer");
 
 class DeleteRequestController {
   constructor(pool) {
     this.deleteRequestModel = new DeleteRequest(pool);
     this.organizationModel = new Organization(pool);
+    this.hiringManagerModel = new HiringManager(pool);
     this.create = this.create.bind(this);
     this.approve = this.approve.bind(this);
     this.deny = this.deny.bind(this);
@@ -112,8 +113,15 @@ class DeleteRequestController {
   async sendDeleteRequestEmail(deleteRequest, requester) {
     const transporter = this.getEmailTransporter();
     const baseUrl = process.env.FRONTEND_URL || "http://localhost:3000";
-    const approveUrl = `${baseUrl}/dashboard/organizations/delete/${deleteRequest.id}/approve`;
-    const denyUrl = `${baseUrl}/dashboard/organizations/delete/${deleteRequest.id}/deny`;
+
+    // Determine path based on record type
+    let recordPath = "organizations";
+    if (deleteRequest.record_type === "hiring_manager") {
+      recordPath = "hiring-managers";
+    }
+
+    const approveUrl = `${baseUrl}/dashboard/${recordPath}/delete/${deleteRequest.id}/approve`;
+    const denyUrl = `${baseUrl}/dashboard/${recordPath}/delete/${deleteRequest.id}/deny`;
 
     const mailOptions = {
       from: process.env.SMTP_FROM || process.env.SMTP_USER,
@@ -267,6 +275,12 @@ class DeleteRequestController {
             `Delete denied: ${denial_reason.trim()}`,
             userId
           );
+        } else if (deniedRequest.record_type === "hiring_manager") {
+          await this.hiringManagerModel.addNote(
+            deniedRequest.record_id,
+            `Delete denied: ${denial_reason.trim()}`,
+            userId
+          );
         }
       } catch (noteError) {
         console.error("Error adding denial note:", noteError);
@@ -381,6 +395,44 @@ class DeleteRequestController {
             "archive_cleanup",
             JSON.stringify({
               organization_id: deleteRequest.record_id,
+              delete_request_id: deleteRequest.id,
+            }),
+          ]
+        );
+      } else if (deleteRequest.record_type === "hiring_manager") {
+        // Update hiring manager status to "Archived"
+        await client.query(
+          `
+          UPDATE hiring_managers
+          SET status = 'Archived',
+              archived_at = CURRENT_TIMESTAMP,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = $1
+        `,
+          [deleteRequest.record_id]
+        );
+
+        // Add system note
+        await this.hiringManagerModel.addNote(
+          deleteRequest.record_id,
+          "Record archived following payroll approval",
+          deleteRequest.reviewed_by
+        );
+
+        // Schedule cleanup job (7 days from now)
+        await client.query(
+          `
+          INSERT INTO scheduled_tasks (
+            task_type,
+            task_data,
+            scheduled_for,
+            status
+          ) VALUES ($1, $2::jsonb, CURRENT_TIMESTAMP + INTERVAL '7 days', 'pending')
+        `,
+          [
+            "archive_cleanup",
+            JSON.stringify({
+              hiring_manager_id: deleteRequest.record_id,
               delete_request_id: deleteRequest.id,
             }),
           ]

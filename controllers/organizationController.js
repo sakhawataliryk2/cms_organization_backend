@@ -137,9 +137,9 @@ class OrganizationController {
             console.log("custom_fields being passed:", JSON.stringify(modelData.custom_fields, null, 2));
             console.log("custom_fields type:", typeof modelData.custom_fields);
             console.log("custom_fields keys count:", modelData.custom_fields ? Object.keys(modelData.custom_fields).length : 0);
-            
+
             console.log("=== END PASSING TO MODEL ===");
-            
+
             const organization = await this.organizationModel.create(modelData);
 
             // Log the created organization for debugging
@@ -249,7 +249,7 @@ class OrganizationController {
             const organizations = await this.organizationModel.getAll(
                 ['admin', 'owner'].includes(userRole) ? null : userId
             );
-           
+
 
             res.status(200).json({
                 success: true,
@@ -280,7 +280,9 @@ class OrganizationController {
                 id,
                 ['admin', 'owner'].includes(userRole) ? null : userId
             );
-            
+
+            console.log('organization', organization)
+
             if (!organization) {
                 return res.status(404).json({
                     success: false,
@@ -511,18 +513,45 @@ class OrganizationController {
 
     // Document methods
 
-    // Get all documents for an organization
+    // Get all documents for an organization (including its hiring managers)
     async getDocuments(req, res) {
         try {
             const { id } = req.params;
 
-            // Get all documents for this organization
-            const documents = await this.documentModel.getByEntity('organization', id);
+            // 1. Get all documents for this organization
+            const orgDocuments = await this.documentModel.getByEntity('organization', id);
+
+            // 2. Get associated hiring managers to also fetch their documents
+            let hmDocuments = [];
+            try {
+                // Get hiring managers for this organization
+                const hiringManagers = await this.organizationModel.getHiringManagers(id);
+                const hmIds = hiringManagers.map(hm => hm.id);
+
+                if (hmIds.length > 0) {
+                    hmDocuments = await this.documentModel.getByEntities('hiring_manager', hmIds);
+
+                    // Add hiring manager name to their documents for clarity
+                    const hmMap = new Map(hiringManagers.map(hm => [hm.id, hm.full_name || `${hm.first_name} ${hm.last_name}`]));
+                    hmDocuments = hmDocuments.map(doc => ({
+                        ...doc,
+                        hiring_manager_name: hmMap.get(doc.entity_id)
+                    }));
+                }
+            } catch (hmError) {
+                console.error('Error fetching associated hiring manager documents:', hmError);
+                // Continue with just organization documents if HM fetch fails
+            }
+
+            // 3. Combine and sort by date
+            const allDocuments = [...orgDocuments, ...hmDocuments].sort((a, b) =>
+                new Date(b.created_at) - new Date(a.created_at)
+            );
 
             return res.status(200).json({
                 success: true,
-                count: documents.length,
-                documents
+                count: allDocuments.length,
+                documents: allDocuments
             });
         } catch (error) {
             console.error('Error getting documents:', error);

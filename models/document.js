@@ -126,6 +126,34 @@ class Document {
         }
     }
 
+    // Get all documents for multiple entities of the same type
+    async getByEntities(entity_type, entity_ids) {
+        if (!entity_ids || entity_ids.length === 0) return [];
+
+        let client;
+        try {
+            client = await this.pool.connect();
+
+            const query = `
+                SELECT d.*, u.name as created_by_name
+                FROM documents d
+                LEFT JOIN users u ON d.created_by = u.id
+                WHERE d.entity_type = $1 AND d.entity_id = ANY($2::int[])
+                ORDER BY d.created_at DESC
+            `;
+
+            const result = await client.query(query, [entity_type, entity_ids]);
+            return result.rows;
+        } catch (error) {
+            console.error('Error fetching documents by entities:', error);
+            throw error;
+        } finally {
+            if (client) {
+                client.release();
+            }
+        }
+    }
+
     // Get document by ID
     async getById(id) {
         let client;

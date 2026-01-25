@@ -238,6 +238,54 @@ class Tearsheet {
     }
   }
 
+  async associate(tearsheetId, data) {
+    const { job_seeker_id, hiring_manager_id, job_id, lead_id } = data;
+    const client = await this.pool.connect();
+    try {
+      console.log(`Starting association for tearsheet ${tearsheetId}`, data);
+
+      if (job_seeker_id) {
+        console.log(`Adding job seeker ${job_seeker_id} to tearsheet ${tearsheetId}`);
+        await client.query(
+          `INSERT INTO tearsheet_job_seekers (tearsheet_id, job_seeker_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+          [tearsheetId, job_seeker_id]
+        );
+      }
+
+      if (hiring_manager_id) {
+        console.log(`Adding hiring manager ${hiring_manager_id} to tearsheet ${tearsheetId}`);
+        await client.query(
+          `INSERT INTO tearsheet_hiring_managers (tearsheet_id, hiring_manager_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+          [tearsheetId, hiring_manager_id]
+        );
+      }
+
+      if (job_id) {
+        console.log(`Adding job ${job_id} to tearsheet ${tearsheetId}`);
+        await client.query(
+          `INSERT INTO tearsheet_jobs (tearsheet_id, job_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+          [tearsheetId, job_id]
+        );
+      }
+
+      if (lead_id) {
+        console.log(`Adding lead ${lead_id} to tearsheet ${tearsheetId}`);
+        await client.query(
+          `INSERT INTO tearsheet_leads (tearsheet_id, lead_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+          [tearsheetId, lead_id]
+        );
+      }
+
+      console.log(`Successfully completed association for tearsheet ${tearsheetId}`);
+      return { success: true };
+    } catch (error) {
+      console.error(`Error in Tearsheet.associate for tearsheet ${tearsheetId}:`, error);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
 }
 
 module.exports = Tearsheet;

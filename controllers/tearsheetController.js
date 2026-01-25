@@ -8,6 +8,7 @@ class TearsheetController {
     this.getAll = this.getAll.bind(this);
     this.getRecords = this.getRecords.bind(this);
     this.delete = this.delete.bind(this);
+    this.associate = this.associate.bind(this);
   }
 
   async initTables() {
@@ -147,6 +148,41 @@ class TearsheetController {
         success: false,
         message: 'Failed to delete tearsheet',
         error: process.env.NODE_ENV === 'production' ? undefined : error.message,
+      });
+    }
+  }
+
+  async associate(req, res) {
+    try {
+      const { id } = req.params;
+      const { job_seeker_id, hiring_manager_id, job_id, lead_id } = req.body;
+
+      console.log('Associating record with tearsheet:', { id, job_seeker_id, hiring_manager_id, job_id, lead_id });
+
+      if (!id || isNaN(parseInt(id))) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid tearsheet ID',
+        });
+      }
+
+      await this.tearsheetModel.associate(parseInt(id), {
+        job_seeker_id: job_seeker_id ? parseInt(job_seeker_id) : null,
+        hiring_manager_id: hiring_manager_id ? parseInt(hiring_manager_id) : null,
+        job_id: job_id ? parseInt(job_id) : null,
+        lead_id: lead_id ? parseInt(lead_id) : null,
+      });
+
+      return res.json({
+        success: true,
+        message: 'Record associated with tearsheet successfully',
+      });
+    } catch (error) {
+      console.error('Error associating record with tearsheet:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to associate record with tearsheet',
+        error: error.message,
       });
     }
   }

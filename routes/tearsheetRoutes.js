@@ -11,6 +11,7 @@ function createTearsheetRouter(tearsheetController, authMiddleware) {
   router.get("/", tearsheetController.getAll);
   router.get("/:id/records", tearsheetController.getRecords);
   router.post("/", tearsheetController.create);
+  router.post("/:id/associate", tearsheetController.associate);
   router.delete("/:id", tearsheetController.delete);
 
   return router;

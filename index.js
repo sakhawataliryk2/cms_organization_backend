@@ -397,10 +397,10 @@ app.use(async (req, res, next) => {
         await ob.initTables();
       }
       // Initialize email template tables
-        if (req.path.startsWith("/api/email-templates")) {
-          const emailTemplateController = new EmailTemplateController(getPool());
-          await emailTemplateController.initTables();
-        }
+      if (req.path.startsWith("/api/email-templates")) {
+        const emailTemplateController = new EmailTemplateController(getPool());
+        await emailTemplateController.initTables();
+      }
     } catch (error) {
       console.error("Failed to initialize tables:", error.message);
       // Continue anyway - tables might already exist
@@ -421,21 +421,24 @@ app.use("/api/users", sanitizeInputs, (req, res, next) => {
   router(req, res, next);
 });
 
-// Setup delete request routes FIRST (before organization routes to avoid conflicts)
-app.use("/api/organizations", sanitizeInputs, (req, res, next) => {
-  // Handle delete request routes first
-  if (req.path.includes("/delete-request") || req.path.match(/\/delete\/\d+\/(approve|deny)/)) {
-    const authMiddleware = { verifyToken: verifyToken(getPool()), checkRole };
-    const router = createDeleteRequestRouter(
-      getDeleteRequestController(),
-      authMiddleware
-    );
-    router(req, res, next);
-  } else {
-    // Pass to next middleware (organization routes)
-    next();
-  }
-});
+// Setup delete request routes FIRST (before main routes to avoid conflicts)
+const applyDeleteRequestRoutes = (basePath) => {
+  app.use(basePath, sanitizeInputs, (req, res, next) => {
+    if (req.path.includes("/delete-request") || req.path.match(/\/delete\/\d+\/(approve|deny)/)) {
+      const authMiddleware = { verifyToken: verifyToken(getPool()), checkRole };
+      const router = createDeleteRequestRouter(
+        getDeleteRequestController(),
+        authMiddleware
+      );
+      router(req, res, next);
+    } else {
+      next();
+    }
+  });
+};
+
+applyDeleteRequestRoutes("/api/organizations");
+applyDeleteRequestRoutes("/api/hiring-managers");
 
 // Setup organization routes with authentication
 app.use("/api/organizations", sanitizeInputs, (req, res, next) => {

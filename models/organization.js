@@ -712,6 +712,25 @@ class Organization {
         }
     }
 
+    // Get all hiring managers belonging to an organization
+    async getHiringManagers(organizationId) {
+        const client = await this.pool.connect();
+        try {
+            const query = `
+                SELECT hm.*, CONCAT(hm.last_name, ', ', hm.first_name) AS full_name
+                FROM hiring_managers hm
+                WHERE hm.organization_id = $1
+                ORDER BY hm.created_at DESC
+            `;
+            const result = await client.query(query, [organizationId]);
+            return result.rows;
+        } catch (error) {
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
+
     async delete(id, userId = null) {
         const client = await this.pool.connect();
         try {

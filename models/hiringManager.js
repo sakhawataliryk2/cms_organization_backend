@@ -31,14 +31,82 @@ class HiringManager {
                     phone VARCHAR(50),
                     mobile_phone VARCHAR(50),
                     direct_line VARCHAR(50),
+                    company_phone VARCHAR(50),
                     linkedin_url VARCHAR(500),
                     address TEXT,
+                    address2 VARCHAR(255),
+                    city VARCHAR(255),
+                    state VARCHAR(255),
+                    zip_code VARCHAR(20),
                     date_added DATE DEFAULT CURRENT_DATE,
+                    last_contact_date DATE,
                     created_by INTEGER REFERENCES users(id),
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    archived_at TIMESTAMP,
                     custom_fields JSONB
                 )
+            `);
+
+            // Add archived_at column if it doesn't exist (for existing tables)
+            await client.query(`
+                DO $$ 
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns 
+                        WHERE table_name='hiring_managers' AND column_name='archived_at'
+                    ) THEN
+                        ALTER TABLE hiring_managers ADD COLUMN archived_at TIMESTAMP;
+                    END IF;
+                END $$;
+            `);
+
+            // Add new address-related columns if they don't exist (for existing tables)
+            await client.query(`
+                DO $$ 
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns 
+                        WHERE table_name='hiring_managers' AND column_name='company_phone'
+                    ) THEN
+                        ALTER TABLE hiring_managers ADD COLUMN company_phone VARCHAR(50);
+                    END IF;
+                    
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns 
+                        WHERE table_name='hiring_managers' AND column_name='address2'
+                    ) THEN
+                        ALTER TABLE hiring_managers ADD COLUMN address2 VARCHAR(255);
+                    END IF;
+                    
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns 
+                        WHERE table_name='hiring_managers' AND column_name='city'
+                    ) THEN
+                        ALTER TABLE hiring_managers ADD COLUMN city VARCHAR(255);
+                    END IF;
+                    
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns 
+                        WHERE table_name='hiring_managers' AND column_name='state'
+                    ) THEN
+                        ALTER TABLE hiring_managers ADD COLUMN state VARCHAR(255);
+                    END IF;
+                    
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns 
+                        WHERE table_name='hiring_managers' AND column_name='zip_code'
+                    ) THEN
+                        ALTER TABLE hiring_managers ADD COLUMN zip_code VARCHAR(20);
+                    END IF;
+                    
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns 
+                        WHERE table_name='hiring_managers' AND column_name='last_contact_date'
+                    ) THEN
+                        ALTER TABLE hiring_managers ADD COLUMN last_contact_date DATE;
+                    END IF;
+                END $$;
             `);
 
             // Create a table for hiring manager notes
@@ -95,9 +163,15 @@ class HiringManager {
             phone,
             mobilePhone,
             directLine,
+            companyPhone,
             linkedinUrl,
             address,
+            address2,
+            city,
+            state,
+            zipCode,
             dateAdded,
+            lastContactDate,
             userId,
             customFields = {}
         } = hiringManagerData;
@@ -183,13 +257,19 @@ class HiringManager {
                     phone,
                     mobile_phone,
                     direct_line,
+                    company_phone,
                     linkedin_url,
                     address,
+                    address2,
+                    city,
+                    state,
+                    zip_code,
                     date_added,
+                    last_contact_date,
                     created_by,
                     custom_fields
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
                 RETURNING *
             `;
 
@@ -210,9 +290,15 @@ class HiringManager {
                 phone,
                 mobilePhone,
                 directLine,
+                companyPhone,
                 linkedinUrl,
                 address,
+                address2,
+                city,
+                state,
+                zipCode,
                 dateAdded || new Date().toISOString().split('T')[0],
+                lastContactDate || null,
                 userId,
                 customFieldsJson
             ];
@@ -390,9 +476,15 @@ class HiringManager {
                 phone: 'phone',
                 mobilePhone: 'mobile_phone',
                 directLine: 'direct_line',
+                companyPhone: 'company_phone',
                 linkedinUrl: 'linkedin_url',
                 address: 'address',
+                address2: 'address2',
+                city: 'city',
+                state: 'state',
+                zipCode: 'zip_code',
                 dateAdded: 'date_added',
+                lastContactDate: 'last_contact_date',
                 customFields: 'custom_fields'
             };
 
@@ -474,7 +566,16 @@ class HiringManager {
             for (const [key, value] of Object.entries(updateData)) {
                 if (key !== 'customFields' && fieldMapping[key] && value !== undefined) {
                     updateFields.push(`${fieldMapping[key]} = $${paramCount}`);
-                    queryParams.push(value);
+
+                    // Normalize values before pushing to query params:
+                    // - Convert empty strings to NULL so Postgres DATE columns accept NULL.
+                    // - Explicitly treat blank `dateAdded` and `lastContactDate` as NULL.
+                    if (['dateAdded', 'lastContactDate'].includes(key)) {
+                        queryParams.push(value && value.trim() !== '' ? value : null);
+                    } else {
+                        queryParams.push(value === '' ? null : value);
+                    }
+
                     paramCount++;
                 }
             }

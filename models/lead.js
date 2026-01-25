@@ -31,8 +31,13 @@ class Lead {
                     phone VARCHAR(50),
                     mobile_phone VARCHAR(50),
                     direct_line VARCHAR(50),
+                    company_phone VARCHAR(50),
                     linkedin_url VARCHAR(500),
                     address TEXT,
+                    address2 VARCHAR(255),
+                    city VARCHAR(255),
+                    state VARCHAR(255),
+                    zip_code VARCHAR(20),
                     date_added DATE DEFAULT CURRENT_DATE,
                     last_contact_date DATE,
                     created_by INTEGER REFERENCES users(id),
@@ -40,6 +45,47 @@ class Lead {
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     custom_fields JSONB
                 )
+            `);
+
+            // Add new address-related columns if they don't exist (for existing tables)
+            await client.query(`
+                DO $$ 
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns 
+                        WHERE table_name='leads' AND column_name='company_phone'
+                    ) THEN
+                        ALTER TABLE leads ADD COLUMN company_phone VARCHAR(50);
+                    END IF;
+                    
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns 
+                        WHERE table_name='leads' AND column_name='address2'
+                    ) THEN
+                        ALTER TABLE leads ADD COLUMN address2 VARCHAR(255);
+                    END IF;
+                    
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns 
+                        WHERE table_name='leads' AND column_name='city'
+                    ) THEN
+                        ALTER TABLE leads ADD COLUMN city VARCHAR(255);
+                    END IF;
+                    
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns 
+                        WHERE table_name='leads' AND column_name='state'
+                    ) THEN
+                        ALTER TABLE leads ADD COLUMN state VARCHAR(255);
+                    END IF;
+                    
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns 
+                        WHERE table_name='leads' AND column_name='zip_code'
+                    ) THEN
+                        ALTER TABLE leads ADD COLUMN zip_code VARCHAR(20);
+                    END IF;
+                END $$;
             `);
 
             // Create a table for lead notes
@@ -96,8 +142,13 @@ class Lead {
             phone,
             mobilePhone,
             directLine,
+            companyPhone,
             linkedinUrl,
             address,
+            address2,
+            city,
+            state,
+            zipCode,
             dateAdded,
             userId,
             customFields = {},
@@ -208,13 +259,18 @@ class Lead {
                     phone,
                     mobile_phone,
                     direct_line,
+                    company_phone,
                     linkedin_url,
                     address,
+                    address2,
+                    city,
+                    state,
+                    zip_code,
                     date_added,
                     created_by,
                     custom_fields
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
                 RETURNING *
             `;
 
@@ -235,8 +291,13 @@ class Lead {
                 phone,
                 mobilePhone,
                 directLine,
+                companyPhone,
                 linkedinUrl,
                 address,
+                address2,
+                city,
+                state,
+                zipCode,
                 dateAdded || new Date().toISOString().split('T')[0],
                 userId,
                 customFieldsJson
@@ -386,8 +447,13 @@ class Lead {
                 phone: 'phone',
                 mobilePhone: 'mobile_phone',
                 directLine: 'direct_line',
+                companyPhone: 'company_phone',
                 linkedinUrl: 'linkedin_url',
                 address: 'address',
+                address2: 'address2',
+                city: 'city',
+                state: 'state',
+                zipCode: 'zip_code',
                 dateAdded: 'date_added',
                 lastContactDate: 'last_contact_date',
                 customFields: 'custom_fields'
@@ -458,9 +524,9 @@ class Lead {
             }
 
             // Handle custom fields merging
-            const hasRelationshipIds = hiringManagerIds !== undefined || jobSeekerIds !== undefined || 
+            const hasRelationshipIds = hiringManagerIds !== undefined || jobSeekerIds !== undefined ||
                 jobIds !== undefined || placementIds !== undefined || opportunityIds !== undefined;
-            
+
             if (updateData.customFields || updateData.custom_fields || hasRelationshipIds) {
                 let newCustomFields = { ...existingCustomFields };
 
