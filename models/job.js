@@ -17,6 +17,7 @@ class Job {
                 CREATE TABLE IF NOT EXISTS jobs (
                 id SERIAL PRIMARY KEY,
                 job_title VARCHAR(255),
+                job_type VARCHAR(50),
                 category VARCHAR(100),
                 organization_id INTEGER REFERENCES organizations(id),
                 hiring_manager VARCHAR(255),
@@ -81,6 +82,7 @@ class Job {
     async create(jobData) {
         const {
             jobTitle,
+            jobType,
             category,
             organizationId,
             hiringManager,
@@ -168,6 +170,7 @@ class Job {
             const insertJobQuery = `
             INSERT INTO jobs (
             job_title,
+            job_type,
             category,
             organization_id,
             hiring_manager,
@@ -189,13 +192,14 @@ class Job {
             created_by,
             custom_fields
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
             RETURNING *
         `;
 
             // Prepare values in the same order as the columns in the query
             const values = [
                 jobTitle,
+                jobType,
                 category,
                 orgId,
                 hiringManager,

@@ -35,6 +35,7 @@ class JobController {
         // Extract fields explicitly like Organizations (including custom_fields)
         const {
             jobTitle,
+            jobType,
             category,
             organizationId,
             organization_id,
@@ -84,6 +85,7 @@ class JobController {
             // Build model data with custom_fields (same pattern as Organizations)
             const modelData = {
                 jobTitle,
+                jobType,
                 category,
                 organizationId: resolvedOrganizationId,
                 hiringManager,

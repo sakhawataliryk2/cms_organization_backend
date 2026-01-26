@@ -1,9 +1,11 @@
 // controllers/placementController.js
 const Placement = require('../models/placement');
+const Document = require('../models/document');
 
 class PlacementController {
     constructor(pool) {
         this.placementModel = new Placement(pool);
+        this.documentModel = new Document(pool);
         this.create = this.create.bind(this);
         this.getAll = this.getAll.bind(this);
         this.getById = this.getById.bind(this);
@@ -11,11 +13,18 @@ class PlacementController {
         this.delete = this.delete.bind(this);
         this.getByJobId = this.getByJobId.bind(this);
         this.getByJobSeekerId = this.getByJobSeekerId.bind(this);
+
+        this.getDocuments = this.getDocuments.bind(this);
+        this.getDocument = this.getDocument.bind(this);
+        this.addDocument = this.addDocument.bind(this);
+        this.updateDocument = this.updateDocument.bind(this);
+        this.deleteDocument = this.deleteDocument.bind(this);
     }
 
     // Initialize database tables
     async initTables() {
         await this.placementModel.initTable();
+        await this.documentModel.initTable();
     }
 
     // Validate date range (end_date must not be earlier than start_date)
@@ -324,6 +333,151 @@ class PlacementController {
             res.status(500).json({
                 success: false,
                 message: 'An error occurred while deleting the placement',
+                error: process.env.NODE_ENV === 'production' ? undefined : error.message
+            });
+        }
+    }
+
+    async getDocuments(req, res) {
+        try {
+            const { id } = req.params;
+
+            const documents = await this.documentModel.getByEntity('placement', id);
+
+            return res.status(200).json({
+                success: true,
+                count: documents.length,
+                documents
+            });
+        } catch (error) {
+            console.error('Error getting placement documents:', error);
+            res.status(500).json({
+                success: false,
+                message: 'An error occurred while getting documents',
+                error: process.env.NODE_ENV === 'production' ? undefined : error.message
+            });
+        }
+    }
+
+    async getDocument(req, res) {
+        try {
+            const { documentId } = req.params;
+
+            const document = await this.documentModel.getById(documentId);
+
+            if (!document) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Document not found'
+                });
+            }
+
+            return res.status(200).json({
+                success: true,
+                document
+            });
+        } catch (error) {
+            console.error('Error getting placement document:', error);
+            res.status(500).json({
+                success: false,
+                message: 'An error occurred while getting the document',
+                error: process.env.NODE_ENV === 'production' ? undefined : error.message
+            });
+        }
+    }
+
+    async addDocument(req, res) {
+        try {
+            const { id } = req.params;
+            const { document_name, document_type, content, file_path, file_size, mime_type } = req.body;
+
+            if (!document_name) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Document name is required'
+                });
+            }
+
+            const userId = req.user.id;
+
+            const document = await this.documentModel.create({
+                entity_type: 'placement',
+                entity_id: id,
+                document_name,
+                document_type: document_type || 'General',
+                content: content || null,
+                file_path: file_path || null,
+                file_size: file_size || null,
+                mime_type: mime_type || 'text/plain',
+                created_by: userId
+            });
+
+            return res.status(201).json({
+                success: true,
+                message: 'Document added successfully',
+                document
+            });
+        } catch (error) {
+            console.error('Error adding placement document:', error);
+            res.status(500).json({
+                success: false,
+                message: 'An error occurred while adding the document',
+                error: process.env.NODE_ENV === 'production' ? undefined : error.message
+            });
+        }
+    }
+
+    async updateDocument(req, res) {
+        try {
+            const { documentId } = req.params;
+            const updateData = req.body;
+
+            const document = await this.documentModel.update(documentId, updateData);
+
+            if (!document) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Document not found'
+                });
+            }
+
+            return res.status(200).json({
+                success: true,
+                message: 'Document updated successfully',
+                document
+            });
+        } catch (error) {
+            console.error('Error updating placement document:', error);
+            res.status(500).json({
+                success: false,
+                message: 'An error occurred while updating the document',
+                error: process.env.NODE_ENV === 'production' ? undefined : error.message
+            });
+        }
+    }
+
+    async deleteDocument(req, res) {
+        try {
+            const { documentId } = req.params;
+
+            const document = await this.documentModel.delete(documentId);
+
+            if (!document) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Document not found'
+                });
+            }
+
+            return res.status(200).json({
+                success: true,
+                message: 'Document deleted successfully'
+            });
+        } catch (error) {
+            console.error('Error deleting placement document:', error);
+            res.status(500).json({
+                success: false,
+                message: 'An error occurred while deleting the document',
                 error: process.env.NODE_ENV === 'production' ? undefined : error.message
             });
         }
