@@ -37,6 +37,13 @@ function createJobRouter(jobController, authMiddleware) {
     // Route for history
     router.get('/:id/history', jobController.getHistory);
 
+    // Document routes
+    router.get('/:id/documents', jobController.getDocuments);
+    router.post('/:id/documents', jobController.addDocument);
+    router.get('/:id/documents/:documentId', jobController.getDocument);
+    router.put('/:id/documents/:documentId', jobController.updateDocument);
+    router.delete('/:id/documents/:documentId', jobController.deleteDocument);
+
     return router;
 }
 

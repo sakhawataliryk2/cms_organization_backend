@@ -624,9 +624,9 @@ class Organization {
             `;
 
             const noteResult = await client.query(noteQuery, [
-                organizationId, 
-                text, 
-                action, 
+                organizationId,
+                text,
+                action,
                 aboutReferencesJson ? JSON.stringify(aboutReferencesJson) : null,
                 userId
             ]);
@@ -721,6 +721,24 @@ class Organization {
                 FROM hiring_managers hm
                 WHERE hm.organization_id = $1
                 ORDER BY hm.created_at DESC
+            `;
+            const result = await client.query(query, [organizationId]);
+            return result.rows;
+        } catch (error) {
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
+
+    async getJobs(organizationId) {
+        const client = await this.pool.connect();
+        try {
+            const query = `
+                SELECT j.*
+                FROM jobs j
+                WHERE j.organization_id = $1
+                ORDER BY j.created_at DESC
             `;
             const result = await client.query(query, [organizationId]);
             return result.rows;

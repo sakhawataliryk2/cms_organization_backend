@@ -523,10 +523,14 @@ class OrganizationController {
 
             // 2. Get associated hiring managers to also fetch their documents
             let hmDocuments = [];
+            let jobDocuments = [];
             try {
                 // Get hiring managers for this organization
                 const hiringManagers = await this.organizationModel.getHiringManagers(id);
+                const jobs = await this.organizationModel.getJobs(id);
+                console.log("Jobs:",jobs)
                 const hmIds = hiringManagers.map(hm => hm.id);
+                const jobIds = jobs.map(job => job.id);
 
                 if (hmIds.length > 0) {
                     hmDocuments = await this.documentModel.getByEntities('hiring_manager', hmIds);
@@ -538,13 +542,18 @@ class OrganizationController {
                         hiring_manager_name: hmMap.get(doc.entity_id)
                     }));
                 }
+                if (jobIds.length > 0) {
+                    jobDocuments = await this.documentModel.getByEntities('job', jobIds);
+
+
+                }
             } catch (hmError) {
                 console.error('Error fetching associated hiring manager documents:', hmError);
                 // Continue with just organization documents if HM fetch fails
             }
 
             // 3. Combine and sort by date
-            const allDocuments = [...orgDocuments, ...hmDocuments].sort((a, b) =>
+            const allDocuments = [...orgDocuments, ...hmDocuments, ...jobDocuments].sort((a, b) =>
                 new Date(b.created_at) - new Date(a.created_at)
             );
 

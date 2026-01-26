@@ -1,9 +1,11 @@
 // controllers/jobController.js
 const Job = require('../models/job');
+const Document = require('../models/document');
 
 class JobController {
     constructor(pool) {
         this.jobModel = new Job(pool);
+        this.documentModel = new Document(pool);
         this.create = this.create.bind(this);
         this.getAll = this.getAll.bind(this);
         this.getById = this.getById.bind(this);
@@ -13,20 +15,29 @@ class JobController {
         this.getNotes = this.getNotes.bind(this);
         this.getHistory = this.getHistory.bind(this);
         this.exportToXML = this.exportToXML.bind(this);
+
+        // Bind document methods
+        this.getDocuments = this.getDocuments.bind(this);
+        this.getDocument = this.getDocument.bind(this);
+        this.addDocument = this.addDocument.bind(this);
+        this.updateDocument = this.updateDocument.bind(this);
+        this.deleteDocument = this.deleteDocument.bind(this);
     }
 
     // Initialize database tables
     async initTables() {
         await this.jobModel.initTable();
+        await this.documentModel.initTable();
     }
 
     // Create a new job
     async create(req, res) {
-        // ✅ Extract fields explicitly like Organizations (including custom_fields)
+        // Extract fields explicitly like Organizations (including custom_fields)
         const {
             jobTitle,
             category,
             organizationId,
+            organization_id,
             hiringManager,
             status,
             priority,
@@ -43,8 +54,10 @@ class JobController {
             jobBoardStatus,
             owner,
             dateAdded,
-            custom_fields, // ✅ Extract custom_fields from request
+            custom_fields, // Extract custom_fields from request
         } = req.body;
+
+        console.log('Jobs Body', req.body);
 
         // Debug log all received fields
         // console.log("=== CREATE JOB REQUEST ===");
@@ -63,12 +76,16 @@ class JobController {
             // Get the current user's ID from the auth middleware
             const userId = req.user.id;
 
+            const resolvedOrganizationId =
+                organizationId !== undefined && organizationId !== null && organizationId !== ''
+                    ? organizationId
+                    : organization_id;
 
-            // ✅ Build model data with custom_fields (same pattern as Organizations)
+            // Build model data with custom_fields (same pattern as Organizations)
             const modelData = {
                 jobTitle,
                 category,
-                organizationId,
+                organizationId: resolvedOrganizationId,
                 hiringManager,
                 status,
                 priority,
@@ -371,6 +388,184 @@ class JobController {
             res.status(500).json({
                 success: false,
                 message: 'An error occurred while getting history',
+                error: process.env.NODE_ENV === 'production' ? undefined : error.message
+            });
+        }
+    }
+
+    // Document methods
+
+    // Get all documents for a job
+    async getDocuments(req, res) {
+        try {
+            const { id } = req.params;
+
+            const documents = await this.documentModel.getByEntity('job', id);
+
+            return res.status(200).json({
+                success: true,
+                count: documents.length,
+                documents
+            });
+        } catch (error) {
+            console.error('Error getting job documents:', error);
+            res.status(500).json({
+                success: false,
+                message: 'An error occurred while getting documents',
+                error: process.env.NODE_ENV === 'production' ? undefined : error.message
+            });
+        }
+    }
+
+    // Get a specific document
+    async getDocument(req, res) {
+        try {
+            const { documentId } = req.params;
+
+            const document = await this.documentModel.getById(documentId);
+
+            if (!document) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Document not found'
+                });
+            }
+
+            return res.status(200).json({
+                success: true,
+                document
+            });
+        } catch (error) {
+            console.error('Error getting job document:', error);
+            res.status(500).json({
+                success: false,
+                message: 'An error occurred while getting the document',
+                error: process.env.NODE_ENV === 'production' ? undefined : error.message
+            });
+        }
+    }
+
+    // Add a new document
+    async addDocument(req, res) {
+        try {
+            const { id } = req.params;
+            const { document_name, document_type, content, file_path, file_size, mime_type } = req.body;
+
+            if (!document_name) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Document name is required'
+                });
+            }
+
+            const userId = req.user.id;
+
+            const document = await this.documentModel.create({
+                entity_type: 'job',
+                entity_id: id,
+                document_name,
+                document_type: document_type || 'General',
+                content: content || null,
+                file_path: file_path || null,
+                file_size: file_size || null,
+                mime_type: mime_type || 'text/plain',
+                created_by: userId
+            });
+
+            // Mirror document to organization if job has an organization_id
+            // try {
+            //     const userRole = req.user.role;
+            //     const job = await this.jobModel.getById(
+            //         id,
+            //         ['admin', 'owner'].includes(userRole) ? null : userId
+            //     );
+            //     const organizationId = job?.organization_id;
+            //     if (organizationId) {
+            //         await this.documentModel.create({
+            //             entity_type: 'organization',
+            //             entity_id: organizationId,
+            //             document_name,
+            //             document_type: document_type || 'General',
+            //             content: content || null,
+            //             file_path: file_path || null,
+            //             file_size: file_size || null,
+            //             mime_type: mime_type || 'text/plain',
+            //             created_by: userId
+            //         });
+            //     }
+            //     console.log("Document mirrored to organization successfully");
+            // } catch (mirrorError) {
+            //     console.error('Error mirroring job document to organization:', mirrorError);
+            // }
+
+            return res.status(201).json({
+                success: true,
+                message: 'Document added successfully',
+                document
+            });
+        } catch (error) {
+            console.error('Error adding job document:', error);
+            res.status(500).json({
+                success: false,
+                message: 'An error occurred while adding the document',
+                error: process.env.NODE_ENV === 'production' ? undefined : error.message
+            });
+        }
+    }
+
+    // Update a document
+    async updateDocument(req, res) {
+        try {
+            const { documentId } = req.params;
+            const updateData = req.body;
+
+            const document = await this.documentModel.update(documentId, updateData);
+
+            if (!document) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Document not found'
+                });
+            }
+
+            return res.status(200).json({
+                success: true,
+                message: 'Document updated successfully',
+                document
+            });
+        } catch (error) {
+            console.error('Error updating job document:', error);
+            res.status(500).json({
+                success: false,
+                message: 'An error occurred while updating the document',
+                error: process.env.NODE_ENV === 'production' ? undefined : error.message
+            });
+        }
+    }
+
+    // Delete a document
+    async deleteDocument(req, res) {
+        try {
+            const { documentId } = req.params;
+
+            const document = await this.documentModel.delete(documentId);
+
+            if (!document) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Document not found'
+                });
+            }
+
+            return res.status(200).json({
+                success: true,
+                message: 'Document deleted successfully'
+            });
+        } catch (error) {
+            console.error('Error deleting job document:', error);
+            res.status(500).json({
+                success: false,
+                message: 'An error occurred while deleting the document',
                 error: process.env.NODE_ENV === 'production' ? undefined : error.message
             });
         }
