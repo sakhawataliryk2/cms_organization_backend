@@ -37,6 +37,10 @@ class JobSeekerController {
 
     this.deleteReference = this.deleteReference.bind(this);
 
+    this.getApplications = this.getApplications.bind(this);
+
+    this.addApplication = this.addApplication.bind(this);
+
      this.getDocuments = this.getDocuments.bind(this);
 
      this.getDocument = this.getDocument.bind(this);
@@ -47,6 +51,133 @@ class JobSeekerController {
 
      this.deleteDocument = this.deleteDocument.bind(this);
 
+  }
+
+  async getApplications(req, res) {
+    try {
+      const { id } = req.params;
+
+      const userId = req.user.id;
+      const userRole = req.user.role;
+
+      const jobSeekerOwner = ["admin", "owner"].includes(userRole) ? null : userId;
+
+      const jobSeeker = await this.jobSeekerModel.getById(id, jobSeekerOwner);
+
+      if (!jobSeeker) {
+        return res.status(404).json({
+          success: false,
+          message:
+            "Job seeker not found or you do not have permission to view it",
+        });
+      }
+
+      const customFields =
+        typeof jobSeeker.custom_fields === "string"
+          ? JSON.parse(jobSeeker.custom_fields || "{}")
+          : jobSeeker.custom_fields || {};
+
+      const applications = Array.isArray(customFields.applications)
+        ? customFields.applications
+        : [];
+
+      return res.status(200).json({
+        success: true,
+        count: applications.length,
+        applications,
+      });
+    } catch (error) {
+      console.error("Error getting job seeker applications:", error);
+      return res.status(500).json({
+        success: false,
+        message: "An error occurred while retrieving applications",
+        error: process.env.NODE_ENV === "production" ? undefined : error.message,
+      });
+    }
+  }
+
+  async addApplication(req, res) {
+    try {
+      const { id } = req.params;
+
+      const userId = req.user.id;
+      const userRole = req.user.role;
+
+      const jobSeekerOwner = ["admin", "owner"].includes(userRole) ? null : userId;
+
+      const application = req.body || {};
+
+      const allowedTypes = [
+        "web_submissions",
+        "submissions",
+        "client_submissions",
+      ];
+
+      if (!application.type || !allowedTypes.includes(application.type)) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid application type. Allowed: web_submissions, submissions, client_submissions",
+        });
+      }
+
+      const jobSeeker = await this.jobSeekerModel.getById(id, jobSeekerOwner);
+
+      if (!jobSeeker) {
+        return res.status(404).json({
+          success: false,
+          message:
+            "Job seeker not found or you do not have permission to update it",
+        });
+      }
+
+      const customFields =
+        typeof jobSeeker.custom_fields === "string"
+          ? JSON.parse(jobSeeker.custom_fields || "{}")
+          : jobSeeker.custom_fields || {};
+
+      const existing = Array.isArray(customFields.applications)
+        ? customFields.applications
+        : [];
+
+      const newApplication = {
+        id:
+          application.id ||
+          `app_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
+        type: application.type,
+        job_id: application.job_id || null,
+        job_title: application.job_title || "",
+        organization_id: application.organization_id || null,
+        organization_name: application.organization_name || "",
+        client_id: application.client_id || null,
+        client_name: application.client_name || "",
+        created_at: new Date().toISOString(),
+        created_by: application.created_by || userId,
+        notes: application.notes || "",
+        status: application.status || "",
+      };
+
+      const updatedApplications = [...existing, newApplication];
+
+      await this.jobSeekerModel.update(
+        id,
+        { custom_fields: { ...customFields, applications: updatedApplications } },
+        jobSeekerOwner
+      );
+
+      return res.status(201).json({
+        success: true,
+        application: newApplication,
+        applications: updatedApplications,
+      });
+    } catch (error) {
+      console.error("Error adding job seeker application:", error);
+      return res.status(500).json({
+        success: false,
+        message: "An error occurred while adding the application",
+        error: process.env.NODE_ENV === "production" ? undefined : error.message,
+      });
+    }
   }
 
 

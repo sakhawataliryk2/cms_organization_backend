@@ -92,6 +92,14 @@ function createJobSeekerRouter(jobSeekerController, authMiddleware) {
 
 
     
+    // Routes for applications
+
+    router.get('/:id/applications', jobSeekerController.getApplications);
+
+    router.post('/:id/applications', jobSeekerController.addApplication);
+
+
+    
     return router;
 }
 
