@@ -357,6 +357,39 @@ class Job {
         }
     }
 
+    async getAdditionalSkillSuggestions(searchQuery, limit = 20) {
+        const q = String(searchQuery || '').trim();
+        const lim = Number.isFinite(Number(limit))
+            ? Math.max(1, Math.min(50, Number(limit)))
+            : 20;
+
+        const client = await this.pool.connect();
+        try {
+            const query = `
+                SELECT DISTINCT TRIM(s.skill) AS skill
+                FROM (
+                    SELECT unnest(regexp_split_to_array(kv.value, ',')) AS skill
+                    FROM jobs j,
+                         jsonb_each_text(COALESCE(j.custom_fields, '{}'::jsonb)) AS kv(key, value)
+                    WHERE LOWER(kv.key) LIKE '%additional%'
+                      AND LOWER(kv.key) LIKE '%skill%'
+                ) s
+                WHERE TRIM(s.skill) <> ''
+                  AND ($1::text = '' OR LOWER(TRIM(s.skill)) LIKE '%' || LOWER($1::text) || '%')
+                ORDER BY skill
+                LIMIT $2
+            `;
+
+            const result = await client.query(query, [q, lim]);
+            return (result.rows || []).map((r) => r.skill).filter(Boolean);
+        } catch (error) {
+            console.error('Error getting additional skill suggestions:', error);
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
+
     // IMPORTANT: Fixed update method with improved field mapping
     async update(id, updateData, userId = null) {
         const client = await this.pool.connect();

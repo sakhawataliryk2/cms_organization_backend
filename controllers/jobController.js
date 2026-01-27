@@ -16,6 +16,8 @@ class JobController {
         this.getHistory = this.getHistory.bind(this);
         this.exportToXML = this.exportToXML.bind(this);
 
+        this.getAdditionalSkillSuggestions = this.getAdditionalSkillSuggestions.bind(this);
+
         // Bind document methods
         this.getDocuments = this.getDocuments.bind(this);
         this.getDocument = this.getDocument.bind(this);
@@ -105,7 +107,7 @@ class JobController {
                 owner,
                 dateAdded,
                 userId,
-                custom_fields: custom_fields || {}, // ✅ Use snake_case to match model expectation
+                custom_fields: custom_fields || {}, // Use snake_case to match model expectation
             };
 
             console.log("=== PASSING TO MODEL ===");
@@ -390,6 +392,26 @@ class JobController {
             res.status(500).json({
                 success: false,
                 message: 'An error occurred while getting history',
+                error: process.env.NODE_ENV === 'production' ? undefined : error.message
+            });
+        }
+    }
+
+    async getAdditionalSkillSuggestions(req, res) {
+        try {
+            const { q, limit } = req.query;
+            const suggestions = await this.jobModel.getAdditionalSkillSuggestions(q, limit);
+
+            return res.status(200).json({
+                success: true,
+                count: suggestions.length,
+                suggestions
+            });
+        } catch (error) {
+            console.error('Error getting additional skill suggestions:', error);
+            return res.status(500).json({
+                success: false,
+                message: 'An error occurred while getting skill suggestions',
                 error: process.env.NODE_ENV === 'production' ? undefined : error.message
             });
         }

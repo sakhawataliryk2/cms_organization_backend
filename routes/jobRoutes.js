@@ -12,6 +12,9 @@ function createJobRouter(jobController, authMiddleware) {
     // (admins see all, regular users see only their own)
     router.get('/', jobController.getAll);
 
+    // Additional skills suggestions (must be before /:id route)
+    router.get('/skills-suggestions', jobController.getAdditionalSkillSuggestions);
+
     // Export jobs to XML (must be before /:id route)
     router.get('/export/xml', jobController.exportToXML);
 
