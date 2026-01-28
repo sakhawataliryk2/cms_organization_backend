@@ -10,7 +10,8 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node index.js",
-    "dev": "nodemon index.js"
+    "dev": "nodemon index.js",
+    "gitadd": "git add . && git commit -m \"Backend Updated Tasks Done\" && git push origin main"
   },
   "keywords": [],
   "author": "",
