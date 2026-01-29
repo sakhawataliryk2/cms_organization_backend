@@ -258,9 +258,14 @@ class JobController {
                 });
             }
 
+            // In development, include the actual error so the client can show it
+            const message = process.env.NODE_ENV === 'production'
+                ? 'An error occurred while updating the job'
+                : (error.message || 'An error occurred while updating the job');
+
             res.status(500).json({
                 success: false,
-                message: 'An error occurred while updating the job',
+                message,
                 error: process.env.NODE_ENV === 'production' ? undefined : error.message
             });
         }

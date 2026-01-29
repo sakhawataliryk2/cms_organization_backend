@@ -519,7 +519,7 @@ class Job {
                 delete updateData.organizationId;
             }
 
-            // Process all other fields - Map from camelCase to snake_case
+            // Process all other fields - Map from camelCase to snake_case (only known keys to avoid DB errors)
             for (const [key, value] of Object.entries(updateData)) {
                 // Skip customFields and custom_fields as they're already processed
                 if (key === 'customFields' || key === 'custom_fields') {
@@ -531,13 +531,25 @@ class Job {
                     continue;
                 }
 
+                // Only update columns we know about; ignore unknown keys from frontend
+                if (!(key in fieldMapping)) {
+                    console.warn(`Skipping unknown field "${key}" in job update`);
+                    continue;
+                }
+
                 // Get the database field name (snake_case)
-                const dbFieldName = fieldMapping[key] || key;
+                const dbFieldName = fieldMapping[key];
                 let paramValue = value;
 
                 // Handle numeric conversions
                 if (key === 'minSalary' || key === 'maxSalary') {
                     paramValue = value ? parseFloat(value) : null;
+                }
+
+                // Handle date fields: empty string is invalid for PostgreSQL DATE, use null
+                if (key === 'startDate' || key === 'dateAdded') {
+                    const trimmed = typeof value === 'string' ? value.trim() : value;
+                    paramValue = (trimmed === '' || trimmed === null || trimmed === undefined) ? null : trimmed;
                 }
 
                 // Ensure paramValue is not undefined before adding
