@@ -1,5 +1,6 @@
 const JobSeeker = require("../models/jobseeker");
 const Document = require("../models/document");
+const { put } = require("@vercel/blob");
 
 const jwt = require("jsonwebtoken");
 
@@ -46,6 +47,8 @@ class JobSeekerController {
      this.getDocument = this.getDocument.bind(this);
 
      this.addDocument = this.addDocument.bind(this);
+
+     this.uploadDocument = this.uploadDocument.bind(this);
 
      this.updateDocument = this.updateDocument.bind(this);
 
@@ -1123,7 +1126,54 @@ class JobSeekerController {
 
   }
 
+  // Upload document with file to Vercel Blob
+  async uploadDocument(req, res) {
+    try {
+      const { id } = req.params;
+      const file = req.file;
+      const documentName = req.body.document_name;
+      const documentType = req.body.document_type || "General";
 
+      if (!file) {
+        return res.status(400).json({ success: false, message: "File is required" });
+      }
+      if (!documentName) {
+        return res.status(400).json({ success: false, message: "Document name is required" });
+      }
+
+      const userId = req.user.id;
+      const timestamp = Date.now();
+      const sanitizedName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, "_");
+      const fileName = `job_seekers/${id}/${timestamp}_${sanitizedName}`;
+
+      const blob = await put(fileName, file.buffer, { access: "public", contentType: file.mimetype });
+
+      const document = await this.documentModel.create({
+        entity_type: "job_seeker",
+        entity_id: id,
+        document_name: documentName,
+        document_type: documentType,
+        content: null,
+        file_path: blob.url,
+        file_size: file.size,
+        mime_type: file.mimetype,
+        created_by: userId,
+      });
+
+      return res.status(201).json({
+        success: true,
+        message: "Document uploaded successfully",
+        document,
+      });
+    } catch (error) {
+      console.error("Error uploading job seeker document:", error);
+      return res.status(500).json({
+        success: false,
+        message: "An error occurred while uploading the document",
+        error: process.env.NODE_ENV === "production" ? undefined : error.message,
+      });
+    }
+  }
 
   // Update a document
 

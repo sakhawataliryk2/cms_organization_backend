@@ -1,4 +1,5 @@
 const express = require('express');
+const uploadOrganizationDocument = require('../middleware/uploadOrganizationDocument');
 
 function createHiringManagerRouter(hiringManagerController, authMiddleware) {
     const router = express.Router();
@@ -39,6 +40,7 @@ function createHiringManagerRouter(hiringManagerController, authMiddleware) {
 
     // Document routes
     router.get('/:id/documents', hiringManagerController.getDocuments);
+    router.post('/:id/documents/upload', uploadOrganizationDocument.single('file'), hiringManagerController.uploadDocument);
     router.post('/:id/documents', hiringManagerController.addDocument);
     router.get('/:id/documents/:documentId', hiringManagerController.getDocument);
     router.put('/:id/documents/:documentId', hiringManagerController.updateDocument);

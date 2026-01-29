@@ -1,8 +1,11 @@
 const Lead = require('../models/lead');
+const Document = require('../models/document');
+const { put } = require('@vercel/blob');
 
 class LeadController {
     constructor(pool) {
         this.leadModel = new Lead(pool);
+        this.documentModel = new Document(pool);
         this.create = this.create.bind(this);
         this.getAll = this.getAll.bind(this);
         this.getById = this.getById.bind(this);
@@ -14,12 +17,19 @@ class LeadController {
         this.getByOrganization = this.getByOrganization.bind(this);
         this.search = this.search.bind(this);
         this.getStats = this.getStats.bind(this);
+        this.getDocuments = this.getDocuments.bind(this);
+        this.getDocument = this.getDocument.bind(this);
+        this.addDocument = this.addDocument.bind(this);
+        this.uploadDocument = this.uploadDocument.bind(this);
+        this.updateDocument = this.updateDocument.bind(this);
+        this.deleteDocument = this.deleteDocument.bind(this);
     }
 
     // Initialize database tables
     async initTables() {
         try {
             await this.leadModel.initTable();
+            await this.documentModel.initTable();
             console.log('✅ Lead tables initialized successfully');
         } catch (error) {
             console.error('❌ Error initializing lead tables:', error);
@@ -646,6 +656,159 @@ class LeadController {
             res.status(500).json({
                 success: false,
                 message: 'An error occurred while retrieving statistics',
+                error: process.env.NODE_ENV === 'production' ? undefined : error.message
+            });
+        }
+    }
+
+    // Document routes (same pattern as organization)
+    async getDocuments(req, res) {
+        try {
+            const { id } = req.params;
+            const documents = await this.documentModel.getByEntity('lead', id);
+            return res.status(200).json({
+                success: true,
+                count: documents.length,
+                documents
+            });
+        } catch (error) {
+            console.error('Error getting lead documents:', error);
+            res.status(500).json({
+                success: false,
+                message: 'An error occurred while getting documents',
+                error: process.env.NODE_ENV === 'production' ? undefined : error.message
+            });
+        }
+    }
+
+    async getDocument(req, res) {
+        try {
+            const { documentId } = req.params;
+            const document = await this.documentModel.getById(documentId);
+            if (!document) {
+                return res.status(404).json({ success: false, message: 'Document not found' });
+            }
+            return res.status(200).json({ success: true, document });
+        } catch (error) {
+            console.error('Error getting lead document:', error);
+            res.status(500).json({
+                success: false,
+                message: 'An error occurred while getting the document',
+                error: process.env.NODE_ENV === 'production' ? undefined : error.message
+            });
+        }
+    }
+
+    async addDocument(req, res) {
+        try {
+            const { id } = req.params;
+            const { document_name, document_type, content, file_path, file_size, mime_type } = req.body;
+            if (!document_name) {
+                return res.status(400).json({ success: false, message: 'Document name is required' });
+            }
+            const userId = req.user.id;
+            const document = await this.documentModel.create({
+                entity_type: 'lead',
+                entity_id: id,
+                document_name,
+                document_type: document_type || 'General',
+                content: content || null,
+                file_path: file_path || null,
+                file_size: file_size || null,
+                mime_type: mime_type || 'text/plain',
+                created_by: userId
+            });
+            return res.status(201).json({ success: true, message: 'Document added successfully', document });
+        } catch (error) {
+            console.error('Error adding lead document:', error);
+            res.status(500).json({
+                success: false,
+                message: 'An error occurred while adding the document',
+                error: process.env.NODE_ENV === 'production' ? undefined : error.message
+            });
+        }
+    }
+
+    async uploadDocument(req, res) {
+        try {
+            const { id } = req.params;
+            const file = req.file;
+            const documentName = req.body.document_name;
+            const documentType = req.body.document_type || 'General';
+
+            if (!file) {
+                return res.status(400).json({ success: false, message: 'File is required' });
+            }
+            if (!documentName) {
+                return res.status(400).json({ success: false, message: 'Document name is required' });
+            }
+
+            const userId = req.user.id;
+            const timestamp = Date.now();
+            const sanitizedName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
+            const fileName = `leads/${id}/${timestamp}_${sanitizedName}`;
+
+            const blob = await put(fileName, file.buffer, { access: 'public', contentType: file.mimetype });
+
+            const document = await this.documentModel.create({
+                entity_type: 'lead',
+                entity_id: id,
+                document_name: documentName,
+                document_type: documentType,
+                content: null,
+                file_path: blob.url,
+                file_size: file.size,
+                mime_type: file.mimetype,
+                created_by: userId
+            });
+
+            return res.status(201).json({
+                success: true,
+                message: 'Document uploaded successfully',
+                document
+            });
+        } catch (error) {
+            console.error('Error uploading lead document:', error);
+            res.status(500).json({
+                success: false,
+                message: 'An error occurred while uploading the document',
+                error: process.env.NODE_ENV === 'production' ? undefined : error.message
+            });
+        }
+    }
+
+    async updateDocument(req, res) {
+        try {
+            const { documentId } = req.params;
+            const updateData = req.body;
+            const document = await this.documentModel.update(documentId, updateData);
+            if (!document) {
+                return res.status(404).json({ success: false, message: 'Document not found' });
+            }
+            return res.status(200).json({ success: true, message: 'Document updated successfully', document });
+        } catch (error) {
+            console.error('Error updating lead document:', error);
+            res.status(500).json({
+                success: false,
+                message: 'An error occurred while updating the document',
+                error: process.env.NODE_ENV === 'production' ? undefined : error.message
+            });
+        }
+    }
+
+    async deleteDocument(req, res) {
+        try {
+            const { documentId } = req.params;
+            const document = await this.documentModel.delete(documentId);
+            if (!document) {
+                return res.status(404).json({ success: false, message: 'Document not found' });
+            }
+            return res.status(200).json({ success: true, message: 'Document deleted successfully', document });
+        } catch (error) {
+            console.error('Error deleting lead document:', error);
+            res.status(500).json({
+                success: false,
+                message: 'An error occurred while deleting the document',
                 error: process.env.NODE_ENV === 'production' ? undefined : error.message
             });
         }
