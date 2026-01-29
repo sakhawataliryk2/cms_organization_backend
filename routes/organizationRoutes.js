@@ -1,5 +1,6 @@
 // Updated routes/organizationRoutes.js
 const express = require('express');
+const uploadOrganizationDocument = require('../middleware/uploadOrganizationDocument');
 
 function createOrganizationRouter(organizationController, authMiddleware) {
     const router = express.Router();
@@ -36,6 +37,7 @@ function createOrganizationRouter(organizationController, authMiddleware) {
 
     // Document routes
     router.get('/:id/documents', organizationController.getDocuments);
+    router.post('/:id/documents/upload', uploadOrganizationDocument.single('file'), organizationController.uploadDocument);
     router.post('/:id/documents', organizationController.addDocument);
     router.get('/:id/documents/:documentId', organizationController.getDocument);
     router.put('/:id/documents/:documentId', organizationController.updateDocument);
