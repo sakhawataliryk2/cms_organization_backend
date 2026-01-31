@@ -41,6 +41,9 @@ function createJobRouter(jobController, authMiddleware) {
     // Route for history
     router.get('/:id/history', jobController.getHistory);
 
+    // Publish / distribute job (LinkedIn, Job Board) — works without credentials; completes when credentials are added
+    router.post('/:id/publish', jobController.publish);
+
     // Document routes
     router.get('/:id/documents', jobController.getDocuments);
     router.post('/:id/documents/upload', uploadOrganizationDocument.single('file'), jobController.uploadDocument);

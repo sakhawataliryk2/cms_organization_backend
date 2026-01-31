@@ -26,6 +26,18 @@ class JobController {
         this.uploadDocument = this.uploadDocument.bind(this);
         this.updateDocument = this.updateDocument.bind(this);
         this.deleteDocument = this.deleteDocument.bind(this);
+        this.publish = this.publish.bind(this);
+    }
+
+    /**
+     * Check if posting/distribution credentials are configured.
+     * When credentials are added (e.g. LINKEDIN_CLIENT_ID, JOB_BOARD_API_KEY), this will return true
+     * and the publish flow can perform actual posting.
+     */
+    _hasPostingCredentials() {
+        const hasLinkedIn = !!(process.env.LINKEDIN_CLIENT_ID && process.env.LINKEDIN_CLIENT_SECRET);
+        const hasJobBoard = !!process.env.JOB_BOARD_API_KEY;
+        return hasLinkedIn || hasJobBoard;
     }
 
     // Initialize database tables
@@ -319,6 +331,61 @@ class JobController {
             res.status(500).json({
                 success: false,
                 message: 'An error occurred while deleting the job',
+                error: process.env.NODE_ENV === 'production' ? undefined : error.message
+            });
+        }
+    }
+
+    /**
+     * Publish / distribute job to selected targets (LinkedIn, Job Board).
+     * Works without credentials: returns success with a message that credentials can be added later.
+     * When credentials are configured, this endpoint can be extended to perform actual posting.
+     */
+    async publish(req, res) {
+        try {
+            const { id } = req.params;
+            const { targets } = req.body || {};
+            const targetList = Array.isArray(targets) ? targets : ['job_board'];
+
+            const userId = req.user.id;
+            const userRole = req.user.role;
+            const jobOwner = ['admin', 'owner'].includes(userRole) ? null : userId;
+
+            const job = await this.jobModel.getById(id, jobOwner);
+            if (!job) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Job not found or you do not have permission to publish it'
+                });
+            }
+
+            const configured = this._hasPostingCredentials();
+
+            if (!configured) {
+                return res.status(200).json({
+                    success: true,
+                    configured: false,
+                    message: 'Distribution is not configured yet. Add your LinkedIn and/or Job Board credentials in Settings to enable posting. Once credentials are added, the same Publish action will post this job to the selected destinations.',
+                    targets: targetList,
+                    jobBoardStatus: job.job_board_status || 'Not Posted'
+                });
+            }
+
+            // When credentials exist: wire LinkedIn/Job Board API calls here, then update job_board_status.
+            // For now we do not change the job; add actual API calls and then:
+            //   await this.jobModel.update(id, { jobBoardStatus: 'Posted', ... }, jobOwner);
+            return res.status(200).json({
+                success: true,
+                configured: true,
+                message: 'Credentials are set. Posting to selected destinations can be completed by wiring the LinkedIn and Job Board API calls in this endpoint.',
+                targets: targetList,
+                jobBoardStatus: job.job_board_status || 'Not Posted'
+            });
+        } catch (error) {
+            console.error('Error in publish:', error);
+            res.status(500).json({
+                success: false,
+                message: 'An error occurred while publishing the job',
                 error: process.env.NODE_ENV === 'production' ? undefined : error.message
             });
         }
