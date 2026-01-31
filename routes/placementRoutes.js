@@ -19,6 +19,9 @@ function createPlacementRouter(placementController, authMiddleware) {
     // Get placements by job seeker ID
     router.get('/job-seeker/:jobSeekerId', placementController.getByJobSeekerId);
 
+    // Get placement history (must be before /:id - more specific route first)
+    router.get('/:id/history', placementController.getHistory);
+
     // Get placement by ID
     // (admins can see any, regular users only their own)
     router.get('/:id', placementController.getById);

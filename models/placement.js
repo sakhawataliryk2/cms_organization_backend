@@ -57,6 +57,21 @@ class Placement {
                 CREATE INDEX IF NOT EXISTS idx_placements_status ON placements(status)
             `);
 
+            // Create placement history table (same structure as job_history, etc.)
+            await client.query(`
+                CREATE TABLE IF NOT EXISTS placement_history (
+                    id SERIAL PRIMARY KEY,
+                    placement_id INTEGER NOT NULL REFERENCES placements(id) ON DELETE CASCADE,
+                    action VARCHAR(50) NOT NULL,
+                    details JSONB,
+                    performed_by INTEGER REFERENCES users(id),
+                    performed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            `);
+            await client.query(`
+                CREATE INDEX IF NOT EXISTS idx_placement_history_placement_id ON placement_history(placement_id)
+            `);
+
             console.log('✅ Placements table initialized successfully');
             return true;
         } catch (error) {
@@ -160,10 +175,23 @@ class Placement {
             ];
 
             const result = await client.query(insertQuery, values);
+            const placementRow = result.rows[0];
+
+            // Add history entry for CREATE
+            const historyQuery = `
+                INSERT INTO placement_history (placement_id, action, details, performed_by)
+                VALUES ($1, $2, $3, $4)
+            `;
+            await client.query(historyQuery, [
+                placementRow.id,
+                'CREATE',
+                JSON.stringify(placementData),
+                created_by || null
+            ]);
 
             await client.query('COMMIT');
 
-            return this.formatPlacement(result.rows[0]);
+            return this.formatPlacement(placementRow);
         } catch (error) {
             await client.query('ROLLBACK');
             console.error('Error creating placement:', error);
@@ -304,7 +332,7 @@ class Placement {
     }
 
     // Update placement
-    async update(id, placementData) {
+    async update(id, placementData, userId = null) {
         const {
             status,
             start_date,
@@ -327,6 +355,10 @@ class Placement {
 
         try {
             await client.query('BEGIN');
+
+            // Get current state for history (before update)
+            const oldResult = await client.query('SELECT * FROM placements WHERE id = $1', [id]);
+            const oldState = oldResult.rows[0] || null;
 
             // Handle custom_fields - accept both customFields and custom_fields, convert object to JSON string for JSONB
             let customFieldsJson = undefined; // Use undefined so COALESCE doesn't update if not provided
@@ -442,10 +474,25 @@ class Placement {
             }
 
             const result = await client.query(updateQuery, values);
+            const updatedRow = result.rows[0];
+
+            if (updatedRow && oldState) {
+                // Add history entry for UPDATE
+                const historyQuery = `
+                    INSERT INTO placement_history (placement_id, action, details, performed_by)
+                    VALUES ($1, $2, $3, $4)
+                `;
+                await client.query(historyQuery, [
+                    id,
+                    'UPDATE',
+                    JSON.stringify({ before: oldState, after: updatedRow }),
+                    userId || oldState.created_by
+                ]);
+            }
 
             await client.query('COMMIT');
 
-            return result.rows.length > 0 ? this.formatPlacement(result.rows[0]) : null;
+            return updatedRow ? this.formatPlacement(updatedRow) : null;
         } catch (error) {
             await client.query('ROLLBACK');
             console.error('Error updating placement:', error);
@@ -456,14 +503,57 @@ class Placement {
     }
 
     // Delete placement
-    async delete(id) {
+    async delete(id, userId = null) {
         const client = await this.pool.connect();
         try {
-            const query = 'DELETE FROM placements WHERE id = $1 RETURNING *';
-            const result = await client.query(query, [id]);
+            await client.query('BEGIN');
+
+            const getQuery = 'SELECT * FROM placements WHERE id = $1';
+            const getResult = await client.query(getQuery, [id]);
+            const placement = getResult.rows[0];
+
+            if (placement) {
+                // Add history entry before deleting
+                const historyQuery = `
+                    INSERT INTO placement_history (placement_id, action, details, performed_by)
+                    VALUES ($1, $2, $3, $4)
+                `;
+                await client.query(historyQuery, [
+                    id,
+                    'DELETE',
+                    JSON.stringify(placement),
+                    userId || placement.created_by
+                ]);
+            }
+
+            const deleteQuery = 'DELETE FROM placements WHERE id = $1 RETURNING *';
+            const result = await client.query(deleteQuery, [id]);
+
+            await client.query('COMMIT');
             return result.rows.length > 0 ? this.formatPlacement(result.rows[0]) : null;
         } catch (error) {
+            await client.query('ROLLBACK');
             console.error('Error deleting placement:', error);
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
+
+    // Get history for a placement
+    async getHistory(placementId) {
+        const client = await this.pool.connect();
+        try {
+            const query = `
+                SELECT h.*, u.name as performed_by_name
+                FROM placement_history h
+                LEFT JOIN users u ON h.performed_by = u.id
+                WHERE h.placement_id = $1
+                ORDER BY h.performed_at DESC
+            `;
+            const result = await client.query(query, [placementId]);
+            return result.rows;
+        } catch (error) {
             throw error;
         } finally {
             client.release();

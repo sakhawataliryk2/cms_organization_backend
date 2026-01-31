@@ -21,6 +21,7 @@ class PlacementController {
         this.uploadDocument = this.uploadDocument.bind(this);
         this.updateDocument = this.updateDocument.bind(this);
         this.deleteDocument = this.deleteDocument.bind(this);
+        this.getHistory = this.getHistory.bind(this);
     }
 
     // Initialize database tables
@@ -281,7 +282,7 @@ class PlacementController {
             }
 
             // Update placement
-            const updatedPlacement = await this.placementModel.update(id, placementData);
+            const updatedPlacement = await this.placementModel.update(id, placementData, userId);
 
             res.status(200).json({
                 success: true,
@@ -293,6 +294,45 @@ class PlacementController {
             res.status(500).json({
                 success: false,
                 message: 'An error occurred while updating the placement',
+                error: process.env.NODE_ENV === 'production' ? undefined : error.message
+            });
+        }
+    }
+
+    // Get history for a placement
+    async getHistory(req, res) {
+        try {
+            const { id } = req.params;
+            const userId = req.user.id;
+            const userRole = req.user.role;
+
+            const placement = await this.placementModel.findById(id);
+            if (!placement) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Placement not found'
+                });
+            }
+
+            if (!['admin', 'owner', 'developer'].includes(userRole) && placement.createdBy !== userId) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'You do not have permission to view this placement'
+                });
+            }
+
+            const history = await this.placementModel.getHistory(id);
+
+            res.status(200).json({
+                success: true,
+                count: history.length,
+                history
+            });
+        } catch (error) {
+            console.error('Error getting placement history:', error);
+            res.status(500).json({
+                success: false,
+                message: 'An error occurred while getting placement history',
                 error: process.env.NODE_ENV === 'production' ? undefined : error.message
             });
         }
@@ -324,7 +364,7 @@ class PlacementController {
             }
 
             // Delete placement
-            await this.placementModel.delete(id);
+            await this.placementModel.delete(id, userId);
 
             res.status(200).json({
                 success: true,
