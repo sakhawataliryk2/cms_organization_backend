@@ -247,6 +247,8 @@ class PlacementController {
             const userId = req.user.id;
             const userRole = req.user.role;
 
+            console.log("Update request body back:", placementData);
+
             // Check if placement exists
             const existingPlacement = await this.placementModel.findById(id);
 
@@ -265,15 +267,38 @@ class PlacementController {
                 });
             }
 
-            // Validate date range if dates are being updated
-            // Use provided dates or existing dates from the placement
-            const startDate = placementData.start_date || existingPlacement.startDate;
-            // end_date might not exist in database, so check both provided value and existing placement
-            const endDate = placementData.end_date !== undefined 
-                ? placementData.end_date 
-                : (existingPlacement.endDate || null);
+            // Normalize: accept both camelCase (startDate) and snake_case (start_date), convert dates to YYYY-MM-DD
+            const toDateStr = (v) => {
+                if (v === undefined || v === null || v === '') return undefined;
+                if (typeof v !== 'string') return v;
+                const d = new Date(v);
+                return isNaN(d.getTime()) ? undefined : d.toISOString().slice(0, 10);
+            };
+            const rawStart = placementData.start_date ?? placementData.startDate;
+            const rawEnd = placementData.end_date ?? placementData.endDate;
 
-            const dateValidation = this.validateDateRange(startDate, endDate);
+            const normalizedData = {
+                ...placementData,
+                status: placementData.status,
+                start_date: rawStart !== undefined ? toDateStr(rawStart) ?? rawStart : undefined,
+                end_date: rawEnd !== undefined ? (rawEnd === '' ? null : (toDateStr(rawEnd) ?? rawEnd)) : undefined,
+                salary: placementData.salary !== undefined ? (placementData.salary === '' ? null : placementData.salary) : undefined,
+                placement_fee_percent: placementData.placement_fee_percent ?? placementData.placementFeePercent,
+                placement_fee_flat: placementData.placement_fee_flat ?? placementData.placementFeeFlat,
+                days_guaranteed: placementData.days_guaranteed ?? placementData.daysGuaranteed,
+                hours_per_day: placementData.hours_per_day ?? placementData.hoursPerDay,
+                hours_of_operation: placementData.hours_of_operation ?? placementData.hoursOfOperation,
+                pay_rate: placementData.pay_rate ?? placementData.payRate,
+                pay_rate_checked: placementData.pay_rate_checked ?? placementData.payRateChecked,
+                effective_date: placementData.effective_date ?? placementData.effectiveDate,
+                effective_date_checked: placementData.effective_date_checked ?? placementData.effectiveDateChecked,
+                overtime_exemption: placementData.overtime_exemption ?? placementData.overtimeExemption,
+                internal_email_notification: placementData.internal_email_notification ?? placementData.internalEmailNotification,
+            };
+
+            const startForValidation = normalizedData.start_date ?? existingPlacement.startDate ?? existingPlacement.start_date;
+            const endForValidation = normalizedData.end_date !== undefined ? normalizedData.end_date : (existingPlacement.endDate ?? existingPlacement.end_date ?? null);
+            const dateValidation = this.validateDateRange(startForValidation, endForValidation);
             if (!dateValidation.valid) {
                 return res.status(400).json({
                     success: false,
@@ -281,8 +306,7 @@ class PlacementController {
                 });
             }
 
-            // Update placement
-            const updatedPlacement = await this.placementModel.update(id, placementData, userId);
+            const updatedPlacement = await this.placementModel.update(id, normalizedData, userId);
 
             res.status(200).json({
                 success: true,

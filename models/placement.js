@@ -45,6 +45,11 @@ class Placement {
                 ALTER TABLE placements 
                 ADD COLUMN IF NOT EXISTS custom_fields JSONB
             `);
+            // Add end_date column if it doesn't exist (for existing installations)
+            await client.query(`
+                ALTER TABLE placements 
+                ADD COLUMN IF NOT EXISTS end_date DATE
+            `);
 
             // Create indexes for better query performance
             await client.query(`
@@ -336,6 +341,7 @@ class Placement {
         const {
             status,
             start_date,
+            end_date,
             internal_email_notification,
             salary,
             placement_fee_percent,
@@ -350,6 +356,23 @@ class Placement {
             overtime_exemption,
             custom_fields
         } = placementData;
+
+        // Convert empty strings to null for numeric fields (PostgreSQL NUMERIC rejects '')
+        const toNum = (v) => {
+            if (v === '' || v === undefined || v === null) return null;
+            const n = parseFloat(v);
+            return Number.isNaN(n) ? null : n;
+        };
+        const toInt = (v) => {
+            if (v === '' || v === undefined || v === null) return null;
+            const n = parseInt(v, 10);
+            return Number.isNaN(n) ? null : n;
+        };
+        const salaryVal = toNum(salary);
+        const placementFeePercentVal = toNum(placement_fee_percent);
+        const placementFeeFlatVal = toNum(placement_fee_flat);
+        const daysGuaranteedVal = toInt(days_guaranteed);
+        const payRateVal = toNum(pay_rate);
 
         const client = await this.pool.connect();
 
@@ -397,34 +420,36 @@ class Placement {
                     SET 
                         status = COALESCE($1, status),
                         start_date = COALESCE($2, start_date),
-                        internal_email_notification = COALESCE($3, internal_email_notification),
-                        salary = COALESCE($4, salary),
-                        placement_fee_percent = COALESCE($5, placement_fee_percent),
-                        placement_fee_flat = COALESCE($6, placement_fee_flat),
-                        days_guaranteed = COALESCE($7, days_guaranteed),
-                        hours_per_day = COALESCE($8, hours_per_day),
-                        hours_of_operation = COALESCE($9, hours_of_operation),
-                        pay_rate = COALESCE($10, pay_rate),
-                        pay_rate_checked = COALESCE($11, pay_rate_checked),
-                        effective_date = COALESCE($12, effective_date),
-                        effective_date_checked = COALESCE($13, effective_date_checked),
-                        overtime_exemption = COALESCE($14, overtime_exemption),
-                        custom_fields = $15,
+                        end_date = COALESCE($3, end_date),
+                        internal_email_notification = COALESCE($4, internal_email_notification),
+                        salary = COALESCE($5, salary),
+                        placement_fee_percent = COALESCE($6, placement_fee_percent),
+                        placement_fee_flat = COALESCE($7, placement_fee_flat),
+                        days_guaranteed = COALESCE($8, days_guaranteed),
+                        hours_per_day = COALESCE($9, hours_per_day),
+                        hours_of_operation = COALESCE($10, hours_of_operation),
+                        pay_rate = COALESCE($11, pay_rate),
+                        pay_rate_checked = COALESCE($12, pay_rate_checked),
+                        effective_date = COALESCE($13, effective_date),
+                        effective_date_checked = COALESCE($14, effective_date_checked),
+                        overtime_exemption = COALESCE($15, overtime_exemption),
+                        custom_fields = $16,
                         updated_at = NOW()
-                    WHERE id = $16
+                    WHERE id = $17
                     RETURNING *
                 `;
                 values = [
                     status,
                     start_date,
+                    end_date === '' ? null : end_date,
                     internal_email_notification,
-                    salary,
-                    placement_fee_percent,
-                    placement_fee_flat,
-                    days_guaranteed,
+                    salaryVal,
+                    placementFeePercentVal,
+                    placementFeeFlatVal,
+                    daysGuaranteedVal,
                     hours_per_day,
                     hours_of_operation,
-                    pay_rate,
+                    payRateVal,
                     pay_rate_checked,
                     effective_date,
                     effective_date_checked,
@@ -438,33 +463,35 @@ class Placement {
                     SET 
                         status = COALESCE($1, status),
                         start_date = COALESCE($2, start_date),
-                        internal_email_notification = COALESCE($3, internal_email_notification),
-                        salary = COALESCE($4, salary),
-                        placement_fee_percent = COALESCE($5, placement_fee_percent),
-                        placement_fee_flat = COALESCE($6, placement_fee_flat),
-                        days_guaranteed = COALESCE($7, days_guaranteed),
-                        hours_per_day = COALESCE($8, hours_per_day),
-                        hours_of_operation = COALESCE($9, hours_of_operation),
-                        pay_rate = COALESCE($10, pay_rate),
-                        pay_rate_checked = COALESCE($11, pay_rate_checked),
-                        effective_date = COALESCE($12, effective_date),
-                        effective_date_checked = COALESCE($13, effective_date_checked),
-                        overtime_exemption = COALESCE($14, overtime_exemption),
+                        end_date = COALESCE($3, end_date),
+                        internal_email_notification = COALESCE($4, internal_email_notification),
+                        salary = COALESCE($5, salary),
+                        placement_fee_percent = COALESCE($6, placement_fee_percent),
+                        placement_fee_flat = COALESCE($7, placement_fee_flat),
+                        days_guaranteed = COALESCE($8, days_guaranteed),
+                        hours_per_day = COALESCE($9, hours_per_day),
+                        hours_of_operation = COALESCE($10, hours_of_operation),
+                        pay_rate = COALESCE($11, pay_rate),
+                        pay_rate_checked = COALESCE($12, pay_rate_checked),
+                        effective_date = COALESCE($13, effective_date),
+                        effective_date_checked = COALESCE($14, effective_date_checked),
+                        overtime_exemption = COALESCE($15, overtime_exemption),
                         updated_at = NOW()
-                    WHERE id = $15
+                    WHERE id = $16
                     RETURNING *
                 `;
                 values = [
                     status,
                     start_date,
+                    end_date === '' ? null : end_date,
                     internal_email_notification,
-                    salary,
-                    placement_fee_percent,
-                    placement_fee_flat,
-                    days_guaranteed,
+                    salaryVal,
+                    placementFeePercentVal,
+                    placementFeeFlatVal,
+                    daysGuaranteedVal,
                     hours_per_day,
                     hours_of_operation,
-                    pay_rate,
+                    payRateVal,
                     pay_rate_checked,
                     effective_date,
                     effective_date_checked,
@@ -585,6 +612,7 @@ class Placement {
             jobSeekerId: row.job_seeker_id,
             status: row.status,
             startDate: row.start_date,
+            endDate: row.end_date,
             internalEmailNotification: row.internal_email_notification,
             salary: row.salary,
             placementFeePercent: row.placement_fee_percent,
