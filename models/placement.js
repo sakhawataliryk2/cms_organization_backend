@@ -85,6 +85,22 @@ class Placement {
                 CREATE INDEX IF NOT EXISTS idx_placement_history_placement_id ON placement_history(placement_id)
             `);
 
+            // Placement notes table (same structure as organization_notes)
+            await client.query(`
+                CREATE TABLE IF NOT EXISTS placement_notes (
+                    id SERIAL PRIMARY KEY,
+                    placement_id INTEGER NOT NULL REFERENCES placements(id) ON DELETE CASCADE,
+                    text TEXT NOT NULL,
+                    action VARCHAR(255),
+                    about_references JSONB,
+                    created_by INTEGER REFERENCES users(id),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            `);
+            await client.query(`
+                CREATE INDEX IF NOT EXISTS idx_placement_notes_placement_id ON placement_notes(placement_id)
+            `);
+
             console.log('✅ Placements table initialized successfully');
             return true;
         } catch (error) {
@@ -606,6 +622,88 @@ class Placement {
             `;
             const result = await client.query(query, [placementId]);
             return result.rows;
+        } catch (error) {
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
+
+    // Add a note to a placement (same pattern as organization)
+    async addNote(placementId, text, userId, action = null, aboutReferences = null) {
+        const client = await this.pool.connect();
+        try {
+            await client.query('BEGIN');
+
+            let aboutReferencesJson = null;
+            if (aboutReferences) {
+                if (typeof aboutReferences === 'string') {
+                    try {
+                        const parsed = JSON.parse(aboutReferences);
+                        aboutReferencesJson = Array.isArray(parsed) ? parsed : [parsed];
+                    } catch (e) {
+                        aboutReferencesJson = aboutReferences;
+                    }
+                } else if (Array.isArray(aboutReferences)) {
+                    aboutReferencesJson = aboutReferences;
+                } else if (typeof aboutReferences === 'object') {
+                    aboutReferencesJson = [aboutReferences];
+                }
+            }
+
+            const noteQuery = `
+                INSERT INTO placement_notes (placement_id, text, action, about_references, created_by)
+                VALUES ($1, $2, $3, $4, $5)
+                RETURNING *
+            `;
+            const noteResult = await client.query(noteQuery, [
+                placementId,
+                text,
+                action,
+                aboutReferencesJson ? JSON.stringify(aboutReferencesJson) : null,
+                userId
+            ]);
+
+            const historyQuery = `
+                INSERT INTO placement_history (placement_id, action, details, performed_by)
+                VALUES ($1, $2, $3, $4)
+            `;
+            await client.query(historyQuery, [
+                placementId,
+                'ADD_NOTE',
+                JSON.stringify({ noteId: noteResult.rows[0].id, text }),
+                userId
+            ]);
+
+            await client.query('COMMIT');
+            return noteResult.rows[0];
+        } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
+
+    async getNotes(placementId) {
+        const client = await this.pool.connect();
+        try {
+            const query = `
+                SELECT n.*, u.name as created_by_name
+                FROM placement_notes n
+                LEFT JOIN users u ON n.created_by = u.id
+                WHERE n.placement_id = $1
+                ORDER BY n.created_at DESC
+            `;
+            const result = await client.query(query, [placementId]);
+            return result.rows.map((row) => {
+                if (row.about_references && typeof row.about_references === 'string') {
+                    try {
+                        row.about_references = JSON.parse(row.about_references);
+                    } catch (e) {}
+                }
+                return row;
+            });
         } catch (error) {
             throw error;
         } finally {

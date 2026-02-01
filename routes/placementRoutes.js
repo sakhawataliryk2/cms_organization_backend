@@ -22,6 +22,10 @@ function createPlacementRouter(placementController, authMiddleware) {
     // Get placement history (must be before /:id - more specific route first)
     router.get('/:id/history', placementController.getHistory);
 
+    // Notes (must be before /:id)
+    router.get('/:id/notes', placementController.getNotes);
+    router.post('/:id/notes', placementController.addNote);
+
     // Get placement by ID
     // (admins can see any, regular users only their own)
     router.get('/:id', placementController.getById);

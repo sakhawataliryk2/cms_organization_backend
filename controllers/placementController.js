@@ -22,6 +22,8 @@ class PlacementController {
         this.updateDocument = this.updateDocument.bind(this);
         this.deleteDocument = this.deleteDocument.bind(this);
         this.getHistory = this.getHistory.bind(this);
+        this.addNote = this.addNote.bind(this);
+        this.getNotes = this.getNotes.bind(this);
     }
 
     // Initialize database tables
@@ -358,6 +360,98 @@ class PlacementController {
             res.status(500).json({
                 success: false,
                 message: 'An error occurred while getting placement history',
+                error: process.env.NODE_ENV === 'production' ? undefined : error.message
+            });
+        }
+    }
+
+    async addNote(req, res) {
+        try {
+            const { id } = req.params;
+            const { text, action, about_references, aboutReferences } = req.body;
+
+            if (!text || !text.trim()) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Note text is required',
+                    errors: { text: 'Note text is required' }
+                });
+            }
+
+            if (!action || !action.trim()) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Action is required',
+                    errors: { action: 'Action is required' }
+                });
+            }
+
+            const userId = req.user.id;
+            const userRole = req.user.role;
+            const placement = await this.placementModel.findById(id);
+            if (!placement) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Placement not found'
+                });
+            }
+            if (!['admin', 'owner', 'developer'].includes(userRole) && placement.createdBy !== userId) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'You do not have permission to add notes to this placement'
+                });
+            }
+
+            const finalAboutReferences = about_references || aboutReferences;
+            const note = await this.placementModel.addNote(id, text, userId, action, finalAboutReferences);
+
+            return res.status(201).json({
+                success: true,
+                message: 'Note added successfully',
+                note
+            });
+        } catch (error) {
+            console.error('Error adding note:', error);
+            res.status(500).json({
+                success: false,
+                message: 'An error occurred while adding the note',
+                error: process.env.NODE_ENV === 'production' ? undefined : error.message
+            });
+        }
+    }
+
+    async getNotes(req, res) {
+        try {
+            const { id } = req.params;
+            const userId = req.user.id;
+            const userRole = req.user.role;
+
+            const placement = await this.placementModel.findById(id);
+            if (!placement) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Placement not found'
+                });
+            }
+            if (!['admin', 'owner', 'developer'].includes(userRole) && placement.createdBy !== userId) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'You do not have permission to view notes for this placement'
+                });
+            }
+
+            const notes = await this.placementModel.getNotes(id);
+
+            return res.status(200).json({
+                success: true,
+                count: notes.length,
+                notes
+            });
+        } catch (error) {
+            console.error('Error getting notes:', error);
+            res.status(500).json({
+                success: false,
+                message: 'An error occurred while getting notes',
                 error: process.env.NODE_ENV === 'production' ? undefined : error.message
             });
         }
