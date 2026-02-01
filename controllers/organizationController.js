@@ -3,6 +3,7 @@ const Office = require('../models/office');
 const Team = require('../models/team');
 const User = require('../models/user');
 const Document = require('../models/document');
+const Placement = require('../models/placement');
 const { put } = require('@vercel/blob');
 
 class OrganizationController {
@@ -12,9 +13,11 @@ class OrganizationController {
         this.teamModel = new Team(pool);
         this.userModel = new User(pool);
         this.documentModel = new Document(pool);
+        this.placementModel = new Placement(pool);
         this.create = this.create.bind(this);
         this.getAll = this.getAll.bind(this);
         this.getById = this.getById.bind(this);
+        this.getWithApprovedPlacements = this.getWithApprovedPlacements.bind(this);
         this.update = this.update.bind(this);
         this.delete = this.delete.bind(this);
         // Bind existing methods
@@ -301,6 +304,35 @@ class OrganizationController {
             res.status(500).json({
                 success: false,
                 message: 'An error occurred while retrieving the organization',
+                error: process.env.NODE_ENV === 'production' ? undefined : error.message
+            });
+        }
+    }
+
+    // Get organizations that have at least one placement with status = 'Approved' (for TBI)
+    async getWithApprovedPlacements(req, res) {
+        try {
+            const userId = req.user.id;
+            const userRole = req.user.role;
+            const filterByUser = !['admin', 'owner', 'developer'].includes(userRole);
+            const orgIds = await this.placementModel.findOrganizationIdsWithApprovedPlacements(
+                filterByUser ? userId : null
+            );
+            if (orgIds.length === 0) {
+                return res.status(200).json({ success: true, count: 0, organizations: [] });
+            }
+            // Return full org data for each org that has approved placement(s); do not filter org by creator
+            const organizations = await this.organizationModel.getByIds(orgIds, null);
+            res.status(200).json({
+                success: true,
+                count: organizations.length,
+                organizations
+            });
+        } catch (error) {
+            console.error('Error getting organizations with approved placements:', error);
+            res.status(500).json({
+                success: false,
+                message: 'An error occurred while retrieving organizations',
                 error: process.env.NODE_ENV === 'production' ? undefined : error.message
             });
         }

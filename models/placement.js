@@ -370,6 +370,33 @@ class Placement {
         }
     }
 
+    // Get distinct organization IDs that have at least one placement with status = 'Approved'
+    async findOrganizationIdsWithApprovedPlacements(userId = null) {
+        const client = await this.pool.connect();
+        try {
+            let query = `
+                SELECT DISTINCT COALESCE(p.organization_id, j.organization_id) AS org_id
+                FROM placements p
+                LEFT JOIN jobs j ON p.job_id = j.id
+                WHERE p.status = $1
+                  AND COALESCE(p.organization_id, j.organization_id) IS NOT NULL
+            `;
+            const params = ['Approved'];
+            if (userId) {
+                query += ` AND p.created_by = $2`;
+                params.push(userId);
+            }
+            query += ` ORDER BY org_id`;
+            const result = await client.query(query, params);
+            return result.rows.map((row) => row.org_id).filter(Boolean);
+        } catch (error) {
+            console.error('Error finding organization IDs with approved placements:', error);
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
+
     // Update placement
     async update(id, placementData, userId = null) {
         const {

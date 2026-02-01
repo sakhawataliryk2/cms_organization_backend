@@ -371,6 +371,33 @@ class Organization {
         }
     }
 
+    // Get organizations by IDs (for TBI: orgs with approved placements)
+    async getByIds(ids, userId = null) {
+        if (!ids || ids.length === 0) return [];
+        const client = await this.pool.connect();
+        try {
+            const placeholders = ids.map((_, i) => `$${i + 1}`).join(',');
+            let query = `
+                SELECT o.*, u.name as created_by_name
+                FROM organizations o
+                LEFT JOIN users u ON o.created_by = u.id
+                WHERE o.id IN (${placeholders})
+            `;
+            const values = [...ids];
+            if (userId) {
+                query += ` AND o.created_by = $${ids.length + 1}`;
+                values.push(userId);
+            }
+            query += ` ORDER BY o.name`;
+            const result = await client.query(query, values);
+            return result.rows;
+        } catch (error) {
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
+
     // Update organization by ID
     async update(id, updateData, userId = null) {
         const client = await this.pool.connect();

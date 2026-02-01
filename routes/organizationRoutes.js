@@ -13,6 +13,9 @@ function createOrganizationRouter(organizationController, authMiddleware) {
     // (admins see all, regular users see only their own)
     router.get('/', organizationController.getAll);
 
+    // Get organizations that have at least one placement with status = 'Approved' (for TBI)
+    router.get('/with-approved-placements', organizationController.getWithApprovedPlacements);
+
     // Get organization by ID 
     // (admins can see any, regular users only their own)
     router.get('/:id', organizationController.getById);
