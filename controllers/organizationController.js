@@ -515,47 +515,78 @@ class OrganizationController {
 
     // Document methods
 
-    // Get all documents for an organization (including its hiring managers)
+    // Get all documents for an organization (including jobs, hiring managers, placements)
     async getDocuments(req, res) {
         try {
             const { id } = req.params;
+            const orgId = id;
 
-            // 1. Get all documents for this organization
-            const orgDocuments = await this.documentModel.getByEntity('organization', id);
+            // 1. Documents uploaded directly to this organization
+            const orgDocuments = await this.documentModel.getByEntity('organization', orgId);
+            const orgWithSource = orgDocuments.map(doc => ({
+                ...doc,
+                source_type: 'organization',
+                source_label: 'Uploaded directly',
+                source_entity_type: 'organization',
+                source_entity_id: orgId,
+                source_link: null
+            }));
 
-            // 2. Get associated hiring managers to also fetch their documents
+            // 2. Documents from jobs, hiring managers, and placements of this organization
             let hmDocuments = [];
             let jobDocuments = [];
+            let placementDocuments = [];
             try {
-                // Get hiring managers for this organization
-                const hiringManagers = await this.organizationModel.getHiringManagers(id);
-                const jobs = await this.organizationModel.getJobs(id);
-                console.log("Jobs:",jobs)
+                const hiringManagers = await this.organizationModel.getHiringManagers(orgId);
+                const jobs = await this.organizationModel.getJobs(orgId);
                 const hmIds = hiringManagers.map(hm => hm.id);
                 const jobIds = jobs.map(job => job.id);
 
                 if (hmIds.length > 0) {
                     hmDocuments = await this.documentModel.getByEntities('hiring_manager', hmIds);
-
-                    // Add hiring manager name to their documents for clarity
-                    const hmMap = new Map(hiringManagers.map(hm => [hm.id, hm.full_name || `${hm.first_name} ${hm.last_name}`]));
+                    const hmMap = new Map(hiringManagers.map(hm => [hm.id, hm.full_name || `${hm.first_name || ''} ${hm.last_name || ''}`.trim()]));
                     hmDocuments = hmDocuments.map(doc => ({
                         ...doc,
-                        hiring_manager_name: hmMap.get(doc.entity_id)
+                        hiring_manager_name: hmMap.get(doc.entity_id),
+                        source_type: 'hiring_manager',
+                        source_label: `From Hiring Manager (${hmMap.get(doc.entity_id) || '#' + doc.entity_id})`,
+                        source_entity_type: 'hiring_manager',
+                        source_entity_id: doc.entity_id,
+                        source_link: `/dashboard/hiring-managers/view?id=${doc.entity_id}`
                     }));
                 }
                 if (jobIds.length > 0) {
                     jobDocuments = await this.documentModel.getByEntities('job', jobIds);
-
-
+                    const jobMap = new Map(jobs.map(j => [j.id, j.job_title || 'Job #' + j.id]));
+                    jobDocuments = jobDocuments.map(doc => ({
+                        ...doc,
+                        source_type: 'job',
+                        source_label: `From Job (${jobMap.get(doc.entity_id) || '#' + doc.entity_id})`,
+                        source_entity_type: 'job',
+                        source_entity_id: doc.entity_id,
+                        source_link: `/dashboard/jobs/view?id=${doc.entity_id}`
+                    }));
                 }
-            } catch (hmError) {
-                console.error('Error fetching associated hiring manager documents:', hmError);
-                // Continue with just organization documents if HM fetch fails
+
+                // 3. Documents from placements (placements whose job belongs to this org)
+                const placementIds = await this.organizationModel.getPlacementIdsByOrganizationId(orgId);
+                if (placementIds.length > 0) {
+                    placementDocuments = await this.documentModel.getByEntities('placement', placementIds);
+                    placementDocuments = placementDocuments.map(doc => ({
+                        ...doc,
+                        source_type: 'placement',
+                        source_label: `From Placement #${doc.entity_id}`,
+                        source_entity_type: 'placement',
+                        source_entity_id: doc.entity_id,
+                        source_link: `/dashboard/placements/view?id=${doc.entity_id}`
+                    }));
+                }
+            } catch (err) {
+                console.error('Error fetching associated documents:', err);
             }
 
-            // 3. Combine and sort by date
-            const allDocuments = [...orgDocuments, ...hmDocuments, ...jobDocuments].sort((a, b) =>
+            // 4. Combine and sort by date
+            const allDocuments = [...orgWithSource, ...hmDocuments, ...jobDocuments, ...placementDocuments].sort((a, b) =>
                 new Date(b.created_at) - new Date(a.created_at)
             );
 

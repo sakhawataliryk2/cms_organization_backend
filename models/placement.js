@@ -50,6 +50,11 @@ class Placement {
                 ALTER TABLE placements 
                 ADD COLUMN IF NOT EXISTS end_date DATE
             `);
+            // Add organization_id column (filled from job; sent from frontend)
+            await client.query(`
+                ALTER TABLE placements 
+                ADD COLUMN IF NOT EXISTS organization_id INTEGER REFERENCES organizations(id)
+            `);
 
             // Create indexes for better query performance
             await client.query(`
@@ -60,6 +65,9 @@ class Placement {
             `);
             await client.query(`
                 CREATE INDEX IF NOT EXISTS idx_placements_status ON placements(status)
+            `);
+            await client.query(`
+                CREATE INDEX IF NOT EXISTS idx_placements_organization_id ON placements(organization_id)
             `);
 
             // Create placement history table (same structure as job_history, etc.)
@@ -94,6 +102,7 @@ class Placement {
         const {
             job_id,
             job_seeker_id,
+            organization_id,
             status,
             start_date,
             internal_email_notification,
@@ -148,19 +157,20 @@ class Placement {
 
             const insertQuery = `
                 INSERT INTO placements (
-                    job_id, job_seeker_id, status, start_date, internal_email_notification,
+                    job_id, job_seeker_id, organization_id, status, start_date, internal_email_notification,
                     salary, placement_fee_percent, placement_fee_flat, days_guaranteed,
                     hours_per_day, hours_of_operation,
                     pay_rate, pay_rate_checked, effective_date, effective_date_checked,
                     overtime_exemption, created_by, custom_fields, created_at, updated_at
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, NOW(), NOW())
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, NOW(), NOW())
                 RETURNING *
             `;
 
             const values = [
                 job_id,
                 job_seeker_id,
+                organization_id || null,
                 status || 'Pending',
                 start_date,
                 internal_email_notification || null,
@@ -219,11 +229,13 @@ class Placement {
                     js.last_name,
                     js.email as job_seeker_email,
                     js.phone as job_seeker_phone,
-                    u.name as created_by_name
+                    u.name as created_by_name,
+                    o.name as organization_name
                 FROM placements p
                 LEFT JOIN jobs j ON p.job_id = j.id
                 LEFT JOIN job_seekers js ON p.job_seeker_id = js.id
                 LEFT JOIN users u ON p.created_by = u.id
+                LEFT JOIN organizations o ON COALESCE(p.organization_id, j.organization_id) = o.id
             `;
 
             const params = [];
@@ -257,11 +269,13 @@ class Placement {
                     js.last_name,
                     js.email as job_seeker_email,
                     js.phone as job_seeker_phone,
-                    u.name as created_by_name
+                    u.name as created_by_name,
+                    o.name as organization_name
                 FROM placements p
                 LEFT JOIN jobs j ON p.job_id = j.id
                 LEFT JOIN job_seekers js ON p.job_seeker_id = js.id
                 LEFT JOIN users u ON p.created_by = u.id
+                LEFT JOIN organizations o ON COALESCE(p.organization_id, j.organization_id) = o.id
                 WHERE p.id = $1
             `;
             const result = await client.query(query, [id]);
@@ -287,11 +301,13 @@ class Placement {
                     js.last_name,
                     js.email as job_seeker_email,
                     js.phone as job_seeker_phone,
-                    u.name as created_by_name
+                    u.name as created_by_name,
+                    o.name as organization_name
                 FROM placements p
                 LEFT JOIN jobs j ON p.job_id = j.id
                 LEFT JOIN job_seekers js ON p.job_seeker_id = js.id
                 LEFT JOIN users u ON p.created_by = u.id
+                LEFT JOIN organizations o ON COALESCE(p.organization_id, j.organization_id) = o.id
                 WHERE p.job_id = $1
                 ORDER BY p.created_at DESC
             `;
@@ -318,11 +334,13 @@ class Placement {
                     js.last_name,
                     js.email as job_seeker_email,
                     js.phone as job_seeker_phone,
-                    u.name as created_by_name
+                    u.name as created_by_name,
+                    o.name as organization_name
                 FROM placements p
                 LEFT JOIN jobs j ON p.job_id = j.id
                 LEFT JOIN job_seekers js ON p.job_seeker_id = js.id
                 LEFT JOIN users u ON p.created_by = u.id
+                LEFT JOIN organizations o ON COALESCE(p.organization_id, j.organization_id) = o.id
                 WHERE p.job_seeker_id = $1
                 ORDER BY p.created_at DESC
             `;
@@ -339,6 +357,7 @@ class Placement {
     // Update placement
     async update(id, placementData, userId = null) {
         const {
+            organization_id,
             status,
             start_date,
             end_date,
@@ -414,31 +433,36 @@ class Placement {
             let updateQuery;
             let values;
             
+            const orgIdVal = organization_id === undefined || organization_id === '' ? undefined : (organization_id === null ? null : parseInt(organization_id, 10));
+            const orgIdParam = orgIdVal === undefined ? null : orgIdVal;
+
             if (customFieldsJson !== undefined) {
                 updateQuery = `
                     UPDATE placements
                     SET 
-                        status = COALESCE($1, status),
-                        start_date = COALESCE($2, start_date),
-                        end_date = COALESCE($3, end_date),
-                        internal_email_notification = COALESCE($4, internal_email_notification),
-                        salary = COALESCE($5, salary),
-                        placement_fee_percent = COALESCE($6, placement_fee_percent),
-                        placement_fee_flat = COALESCE($7, placement_fee_flat),
-                        days_guaranteed = COALESCE($8, days_guaranteed),
-                        hours_per_day = COALESCE($9, hours_per_day),
-                        hours_of_operation = COALESCE($10, hours_of_operation),
-                        pay_rate = COALESCE($11, pay_rate),
-                        pay_rate_checked = COALESCE($12, pay_rate_checked),
-                        effective_date = COALESCE($13, effective_date),
-                        effective_date_checked = COALESCE($14, effective_date_checked),
-                        overtime_exemption = COALESCE($15, overtime_exemption),
-                        custom_fields = $16,
+                        organization_id = COALESCE($1, organization_id),
+                        status = COALESCE($2, status),
+                        start_date = COALESCE($3, start_date),
+                        end_date = COALESCE($4, end_date),
+                        internal_email_notification = COALESCE($5, internal_email_notification),
+                        salary = COALESCE($6, salary),
+                        placement_fee_percent = COALESCE($7, placement_fee_percent),
+                        placement_fee_flat = COALESCE($8, placement_fee_flat),
+                        days_guaranteed = COALESCE($9, days_guaranteed),
+                        hours_per_day = COALESCE($10, hours_per_day),
+                        hours_of_operation = COALESCE($11, hours_of_operation),
+                        pay_rate = COALESCE($12, pay_rate),
+                        pay_rate_checked = COALESCE($13, pay_rate_checked),
+                        effective_date = COALESCE($14, effective_date),
+                        effective_date_checked = COALESCE($15, effective_date_checked),
+                        overtime_exemption = COALESCE($16, overtime_exemption),
+                        custom_fields = $17,
                         updated_at = NOW()
-                    WHERE id = $17
+                    WHERE id = $18
                     RETURNING *
                 `;
                 values = [
+                    orgIdParam,
                     status,
                     start_date,
                     end_date === '' ? null : end_date,
@@ -461,26 +485,28 @@ class Placement {
                 updateQuery = `
                     UPDATE placements
                     SET 
-                        status = COALESCE($1, status),
-                        start_date = COALESCE($2, start_date),
-                        end_date = COALESCE($3, end_date),
-                        internal_email_notification = COALESCE($4, internal_email_notification),
-                        salary = COALESCE($5, salary),
-                        placement_fee_percent = COALESCE($6, placement_fee_percent),
-                        placement_fee_flat = COALESCE($7, placement_fee_flat),
-                        days_guaranteed = COALESCE($8, days_guaranteed),
-                        hours_per_day = COALESCE($9, hours_per_day),
-                        hours_of_operation = COALESCE($10, hours_of_operation),
-                        pay_rate = COALESCE($11, pay_rate),
-                        pay_rate_checked = COALESCE($12, pay_rate_checked),
-                        effective_date = COALESCE($13, effective_date),
-                        effective_date_checked = COALESCE($14, effective_date_checked),
-                        overtime_exemption = COALESCE($15, overtime_exemption),
+                        organization_id = COALESCE($1, organization_id),
+                        status = COALESCE($2, status),
+                        start_date = COALESCE($3, start_date),
+                        end_date = COALESCE($4, end_date),
+                        internal_email_notification = COALESCE($5, internal_email_notification),
+                        salary = COALESCE($6, salary),
+                        placement_fee_percent = COALESCE($7, placement_fee_percent),
+                        placement_fee_flat = COALESCE($8, placement_fee_flat),
+                        days_guaranteed = COALESCE($9, days_guaranteed),
+                        hours_per_day = COALESCE($10, hours_per_day),
+                        hours_of_operation = COALESCE($11, hours_of_operation),
+                        pay_rate = COALESCE($12, pay_rate),
+                        pay_rate_checked = COALESCE($13, pay_rate_checked),
+                        effective_date = COALESCE($14, effective_date),
+                        effective_date_checked = COALESCE($15, effective_date_checked),
+                        overtime_exemption = COALESCE($16, overtime_exemption),
                         updated_at = NOW()
-                    WHERE id = $16
+                    WHERE id = $17
                     RETURNING *
                 `;
                 values = [
+                    orgIdParam,
                     status,
                     start_date,
                     end_date === '' ? null : end_date,
@@ -610,6 +636,8 @@ class Placement {
             id: row.id,
             jobId: row.job_id,
             jobSeekerId: row.job_seeker_id,
+            organizationId: row.organization_id,
+            organizationName: row.organization_name,
             status: row.status,
             startDate: row.start_date,
             endDate: row.end_date,

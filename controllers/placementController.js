@@ -279,6 +279,7 @@ class PlacementController {
 
             const normalizedData = {
                 ...placementData,
+                organization_id: placementData.organization_id ?? placementData.organizationId,
                 status: placementData.status,
                 start_date: rawStart !== undefined ? toDateStr(rawStart) ?? rawStart : undefined,
                 end_date: rawEnd !== undefined ? (rawEnd === '' ? null : (toDateStr(rawEnd) ?? rawEnd)) : undefined,

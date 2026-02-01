@@ -749,6 +749,25 @@ class Organization {
         }
     }
 
+    /** Get placement IDs for this organization (placements whose job belongs to this org). */
+    async getPlacementIdsByOrganizationId(organizationId) {
+        const client = await this.pool.connect();
+        try {
+            const query = `
+                SELECT p.id
+                FROM placements p
+                INNER JOIN jobs j ON p.job_id = j.id
+                WHERE j.organization_id = $1
+            `;
+            const result = await client.query(query, [organizationId]);
+            return result.rows.map((row) => row.id);
+        } catch (error) {
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
+
     async delete(id, userId = null) {
         const client = await this.pool.connect();
         try {
