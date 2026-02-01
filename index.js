@@ -269,21 +269,31 @@ const getEmailTemplateController = () => {
 //   }
 // });
 
+// Core tables (offices, teams, users) initialized once at startup to avoid connection exhaustion
+let coreTablesInitialized = false;
+let coreTablesInitPromise = null;
+
 app.use(async (req, res, next) => {
   if (req.path.startsWith("/api/")) {
     try {
-      // Initialize core tables first (offices and teams before users)
-      const officeController = getOfficeController();
-      await officeController.initTables();
+      // Initialize core tables once per process (not on every request)
+      if (!coreTablesInitialized) {
+        if (!coreTablesInitPromise) {
+          coreTablesInitPromise = (async () => {
+            const officeController = getOfficeController();
+            await officeController.initTables();
+            const teamController = getTeamController();
+            await teamController.initTables();
+            const authController = getAuthController();
+            await authController.initTables();
+            coreTablesInitialized = true;
+            console.log("Core tables (offices, teams, users) initialized.");
+          })();
+        }
+        await coreTablesInitPromise;
+      }
 
-      const teamController = getTeamController();
-      await teamController.initTables();
-
-      // Initialize user tables (depends on offices and teams)
-      const authController = getAuthController();
-      await authController.initTables();
-
-      // Initialize organization tables
+      // Initialize organization tables (path-based, only when needed)
       if (req.path.startsWith("/api/organizations")) {
         const organizationController = getOrganizationController();
         await organizationController.initTables();

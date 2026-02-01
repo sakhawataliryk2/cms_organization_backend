@@ -11,7 +11,7 @@ const createPool = () => {
     port: process.env.DB_PORT,
     database: process.env.DB_DATABASE,
     ssl: process.env.DB_SSL === "true" ? { rejectUnauthorized: false } : false,
-    max: 10, // Reduced for serverless
+    max: parseInt(process.env.DB_POOL_MAX, 10) || 5, // Keep low to avoid "connection slots reserved for SUPERUSER" on limited DB plans
     idleTimeoutMillis: parseInt(process.env.DB_IDLE_TIMEOUT) || 30000, // Reduced for serverless
     connectionTimeoutMillis:
       parseInt(process.env.DB_CONNECTION_TIMEOUT) || 5000,
