@@ -2,6 +2,7 @@
 const Transfer = require("../models/transfer");
 const Organization = require("../models/organization");
 const nodemailer = require("nodemailer");
+const { sendMail } = require("../services/emailService");
 
 class TransferController {
   constructor(pool) {
@@ -88,9 +89,25 @@ class TransferController {
 
       // Send email notification to payroll
       try {
-        await this.sendTransferRequestEmail(transfer, {
-          name: requested_by || user.name || "Unknown",
-          email: requested_by_email || user.email || "",
+        await sendMail({
+          to: "payroll@completestaffingsolutions.com",
+          subject: `Transfer Request: ${transfer.source_record_number} → ${transfer.target_record_number}`,
+          html: `
+            <h2>Organization Transfer Request</h2>
+            <p>A transfer request has been submitted:</p>
+            <ul>
+              <li><strong>Requested By:</strong> ${requested_by || user.name || "Unknown"} (${requested_by_email || user.email || ""})</li>
+              <li><strong>Source Organization:</strong> ${transfer.source_record_number}</li>
+              <li><strong>Target Organization:</strong> ${transfer.target_record_number}</li>
+              <li><strong>Request Date:</strong> ${new Date(transfer.created_at).toLocaleString()}</li>
+            </ul>
+            <p>Please review and approve or deny this transfer:</p>
+            <p>
+              <a href="${approveUrl}" style="background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin-right: 10px;">Approve Transfer</a>
+              <a href="${denyUrl}" style="background-color: #f44336; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Deny Transfer</a>
+            </p>
+            <p><small>Transfer ID: ${transfer.id}</small></p>
+          `,
         });
       } catch (emailError) {
         console.error("Error sending transfer request email:", emailError);
