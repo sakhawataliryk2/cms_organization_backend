@@ -99,12 +99,11 @@ class TransferController {
               <li><strong>Requested By:</strong> ${requested_by || user.name || "Unknown"} (${requested_by_email || user.email || ""})</li>
               <li><strong>Source Organization:</strong> ${transfer.source_record_number}</li>
               <li><strong>Target Organization:</strong> ${transfer.target_record_number}</li>
-              <li><strong>Request Date:</strong> ${new Date(transfer.created_at).toLocaleString()}</li>
             </ul>
             <p>Please review and approve or deny this transfer:</p>
             <p>
-              <a href="${approveUrl}" style="background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin-right: 10px;">Approve Transfer</a>
-              <a href="${denyUrl}" style="background-color: #f44336; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Deny Transfer</a>
+              <a href=style="background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin-right: 10px;">Approve Transfer</a>
+              " style="background-color: #f44336; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Deny Transfer</a>
             </p>
             <p><small>Transfer ID: ${transfer.id}</small></p>
           `,
