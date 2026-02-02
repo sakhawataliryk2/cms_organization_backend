@@ -47,6 +47,16 @@ class CustomFieldDefinition {
                 ADD COLUMN IF NOT EXISTS lookup_type VARCHAR(50)
             `);
 
+            // Add is_read_only and sub_field_ids for new field types (composite, read-only)
+            await client.query(`
+                ALTER TABLE custom_field_definitions 
+                ADD COLUMN IF NOT EXISTS is_read_only BOOLEAN DEFAULT false
+            `);
+            await client.query(`
+                ALTER TABLE custom_field_definitions 
+                ADD COLUMN IF NOT EXISTS sub_field_ids JSONB
+            `);
+
             // Create history table for tracking changes
             await client.query(`
                 CREATE TABLE IF NOT EXISTS custom_field_definition_history (
@@ -90,14 +100,18 @@ class CustomFieldDefinition {
             fieldType,
             isRequired,
             isHidden,
+            isReadOnly,
             sortOrder,
             options,
             placeholder,
             defaultValue,
             validationRules,
             lookupType,
+            subFieldIds,
             userId
         } = fieldData;
+
+        const effectiveRequired = isReadOnly ? false : (isRequired || false);
 
         const client = await this.pool.connect();
         try {
@@ -106,11 +120,11 @@ class CustomFieldDefinition {
             const query = `
                 INSERT INTO custom_field_definitions (
                     entity_type, field_name, field_label, field_type,
-                    is_required, is_hidden, sort_order, options,
-                    placeholder, default_value, validation_rules, lookup_type,
+                    is_required, is_hidden, is_read_only, sort_order, options,
+                    placeholder, default_value, validation_rules, lookup_type, sub_field_ids,
                     created_by, updated_by
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $13)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $15)
                 RETURNING *
             `;
 
@@ -119,14 +133,16 @@ class CustomFieldDefinition {
                 fieldName,
                 fieldLabel,
                 fieldType || 'text',
-                isRequired || false,
+                effectiveRequired,
                 isHidden || false,
+                Boolean(isReadOnly),
                 sortOrder || 0,
                 options ? JSON.stringify(options) : null,
                 placeholder,
                 defaultValue,
                 validationRules ? JSON.stringify(validationRules) : null,
                 lookupType || null,
+                subFieldIds && Array.isArray(subFieldIds) ? JSON.stringify(subFieldIds) : null,
                 userId
             ];
 
@@ -198,6 +214,11 @@ class CustomFieldDefinition {
 
             const oldValues = currentFieldResult.rows[0];
 
+            // Read-only: when true, required must be false
+            if (updateData.isReadOnly === true) {
+                updateData.isRequired = false;
+            }
+
             // Critical: Validate Hidden & Required mutual exclusivity before update
             const finalIsRequired = updateData.isRequired !== undefined 
                 ? updateData.isRequired 
@@ -213,7 +234,6 @@ class CustomFieldDefinition {
                 } else if (updateData.isHidden !== undefined && updateData.isHidden === true) {
                     updateData.isRequired = false;
                 } else {
-                    // Both are being set or both already true - prefer keeping required, unset hidden
                     updateData.isHidden = false;
                 }
             }
@@ -230,10 +250,12 @@ class CustomFieldDefinition {
                 fieldType: 'field_type',
                 isRequired: 'is_required',
                 isHidden: 'is_hidden',
+                isReadOnly: 'is_read_only',
                 sortOrder: 'sort_order',
                 placeholder: 'placeholder',
                 defaultValue: 'default_value',
-                lookupType: 'lookup_type'
+                lookupType: 'lookup_type',
+                subFieldIds: 'sub_field_ids'
             };
 
             // Process regular fields
@@ -255,6 +277,12 @@ class CustomFieldDefinition {
             if (updateData.validationRules !== undefined) {
                 updateFields.push(`validation_rules = $${paramCount}`);
                 queryParams.push(updateData.validationRules ? JSON.stringify(updateData.validationRules) : null);
+                paramCount++;
+            }
+
+            if (updateData.subFieldIds !== undefined) {
+                updateFields.push(`sub_field_ids = $${paramCount}`);
+                queryParams.push(updateData.subFieldIds && Array.isArray(updateData.subFieldIds) ? JSON.stringify(updateData.subFieldIds) : null);
                 paramCount++;
             }
 

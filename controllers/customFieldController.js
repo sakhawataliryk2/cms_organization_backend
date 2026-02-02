@@ -32,12 +32,14 @@ class CustomFieldController {
                 fieldType,
                 isRequired,
                 isHidden,
+                isReadOnly,
                 sortOrder,
                 options,
                 placeholder,
                 defaultValue,
                 validationRules,
-                lookupType
+                lookupType,
+                subFieldIds
             } = req.body;
 
             console.log("Create custom field request:", req.body);
@@ -59,7 +61,7 @@ class CustomFieldController {
             }
 
             // Validate field type
-            const validFieldTypes = ['text', 'email', 'phone', 'number', 'currency', 'percentage', 'date', 'datetime', 'textarea', 'select', 'checkbox', 'radio', 'url', 'file', 'lookup'];
+            const validFieldTypes = ['text', 'email', 'phone', 'number', 'currency', 'percentage', 'date', 'datetime', 'textarea', 'select', 'checkbox', 'radio', 'url', 'file', 'lookup', 'multiselect', 'multicheckbox', 'composite', 'link'];
             console.log('Validating field type:', fieldType, 'against valid types:', validFieldTypes);
             if (fieldType && !validFieldTypes.includes(fieldType)) {
                 console.error('Field type validation failed:', fieldType, 'not in', validFieldTypes);
@@ -69,10 +71,10 @@ class CustomFieldController {
                 });
             }
 
-            // Critical: Validate Hidden & Required mutual exclusivity
-            const finalIsRequired = Boolean(isRequired);
+            // Read-only: when true, required is auto-disabled
+            const effectiveRequired = isReadOnly ? false : Boolean(isRequired);
             const finalIsHidden = Boolean(isHidden);
-            if (finalIsRequired === true && finalIsHidden === true) {
+            if (effectiveRequired === true && finalIsHidden === true) {
                 return res.status(400).json({
                     success: false,
                     message: 'A field cannot be both Hidden and Required. Fields must be either visible (not hidden) to be required, or hidden (not required).'
@@ -87,14 +89,16 @@ class CustomFieldController {
                 fieldName,
                 fieldLabel,
                 fieldType: fieldType || 'text',
-                isRequired: Boolean(isRequired),
-                isHidden: Boolean(isHidden),
+                isRequired: effectiveRequired,
+                isHidden: finalIsHidden,
+                isReadOnly: Boolean(isReadOnly),
                 sortOrder: sortOrder || 0,
                 options,
                 placeholder,
                 defaultValue,
                 validationRules,
                 lookupType,
+                subFieldIds: Array.isArray(subFieldIds) ? subFieldIds : null,
                 userId
             };
 
@@ -240,7 +244,7 @@ class CustomFieldController {
             }
 
             // 5. Validate field type if it's being updated
-            const validFieldTypes = ['text', 'email', 'phone', 'number', 'currency', 'percentage', 'date', 'datetime', 'textarea', 'select', 'checkbox', 'radio', 'url', 'file', 'lookup'];
+            const validFieldTypes = ['text', 'email', 'phone', 'number', 'currency', 'percentage', 'date', 'datetime', 'textarea', 'select', 'checkbox', 'radio', 'url', 'file', 'lookup', 'multiselect', 'multicheckbox', 'composite', 'link'];
             if (updateData.fieldType !== undefined) {
                 console.log('Validating field type update:', updateData.fieldType, 'against valid types:', validFieldTypes);
                 if (!validFieldTypes.includes(updateData.fieldType)) {
@@ -288,8 +292,12 @@ class CustomFieldController {
                 sanitizedData.isHidden = Boolean(sanitizedData.isHidden);
             }
 
+            // When read-only is set to true, force required to false
+            if (sanitizedData.isReadOnly === true) {
+                sanitizedData.isRequired = false;
+            }
+
             // 8a. Validate Hidden & Required mutual exclusivity
-            // Get current field state to check if both are being set
             const currentField = await this.customFieldModel.getById(id);
             if (!currentField) {
                 return res.status(404).json({
@@ -298,7 +306,6 @@ class CustomFieldController {
                 });
             }
 
-            // Determine final values (use updateData if provided, otherwise use current)
             const finalIsRequired = sanitizedData.isRequired !== undefined 
                 ? sanitizedData.isRequired 
                 : currentField.is_required;
@@ -306,7 +313,6 @@ class CustomFieldController {
                 ? sanitizedData.isHidden 
                 : currentField.is_hidden;
 
-            // Critical: A field cannot be both Hidden and Required
             if (finalIsRequired === true && finalIsHidden === true) {
                 return res.status(400).json({
                     success: false,
@@ -314,11 +320,14 @@ class CustomFieldController {
                 });
             }
 
-            // Auto-correct: If both would be true, prefer setting hidden to false
             if (sanitizedData.isRequired !== undefined && sanitizedData.isRequired === true) {
                 sanitizedData.isHidden = false;
             } else if (sanitizedData.isHidden !== undefined && sanitizedData.isHidden === true) {
                 sanitizedData.isRequired = false;
+            }
+
+            if (sanitizedData.subFieldIds !== undefined) {
+                sanitizedData.subFieldIds = Array.isArray(sanitizedData.subFieldIds) ? sanitizedData.subFieldIds : null;
             }
 
             // 9. Sanitize string fields
