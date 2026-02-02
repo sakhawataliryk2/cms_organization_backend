@@ -1,13 +1,19 @@
 const DeleteRequest = require("../models/deleteRequest");
 const Organization = require("../models/organization");
 const HiringManager = require("../models/hiringManager");
-const nodemailer = require("nodemailer");
+const EmailTemplateModel = require("../models/emailTemplateModel");
+const { renderTemplate } = require("../utils/templateRenderer");
+const { sendMail } = require("../services/emailService");
+
+const PAYROLL_EMAIL = process.env.PAYROLL_EMAIL || "payroll@completestaffingsolutions.com";
 
 class DeleteRequestController {
   constructor(pool) {
+    this.pool = pool;
     this.deleteRequestModel = new DeleteRequest(pool);
     this.organizationModel = new Organization(pool);
     this.hiringManagerModel = new HiringManager(pool);
+    this.emailTemplateModel = new EmailTemplateModel(pool);
     this.create = this.create.bind(this);
     this.approve = this.approve.bind(this);
     this.deny = this.deny.bind(this);
@@ -16,19 +22,6 @@ class DeleteRequestController {
 
   async initTables() {
     await this.deleteRequestModel.initTable();
-  }
-
-  // Email transporter setup
-  getEmailTransporter() {
-    return nodemailer.createTransport({
-      host: process.env.SMTP_HOST || "smtp.office365.com",
-      port: parseInt(process.env.SMTP_PORT || "587"),
-      secure: false,
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-    });
   }
 
   async create(req, res) {
@@ -111,42 +104,64 @@ class DeleteRequestController {
   }
 
   async sendDeleteRequestEmail(deleteRequest, requester) {
-    const transporter = this.getEmailTransporter();
     const baseUrl = process.env.FRONTEND_URL || "http://localhost:3000";
-
-    // Determine path based on record type
     let recordPath = "organizations";
     if (deleteRequest.record_type === "hiring_manager") {
       recordPath = "hiring-managers";
     }
-
-    const approveUrl = `${baseUrl}/dashboard/${recordPath}/delete/${deleteRequest.id}/approve`;
+    const approvalUrl = `${baseUrl}/dashboard/${recordPath}/delete/${deleteRequest.id}/approve`;
     const denyUrl = `${baseUrl}/dashboard/${recordPath}/delete/${deleteRequest.id}/deny`;
 
-    const mailOptions = {
-      from: process.env.SMTP_FROM || process.env.SMTP_USER,
-      to: "payroll@completestaffingsolutions.com",
-      subject: `Delete Request: ${deleteRequest.record_type} ${deleteRequest.record_number || deleteRequest.record_id}`,
-      html: `
-        <h2>Delete Request</h2>
-        <p>A delete request has been submitted:</p>
-        <ul>
-          <li><strong>Requested By:</strong> ${requester.name} (${requester.email})</li>
-          <li><strong>Record Type:</strong> ${deleteRequest.record_type}</li>
-          <li><strong>Record Number:</strong> ${deleteRequest.record_number || deleteRequest.record_id}</li>
-          <li><strong>Reason:</strong> ${deleteRequest.reason}</li>
-          <li><strong>Request Date:</strong> ${new Date(deleteRequest.created_at).toLocaleString()}</li>
-        </ul>
-        <p>Please review and approve or deny this deletion:</p>
-        <p>
-          <a href="${approveUrl}" style="background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin-right: 10px;">Approve Deletion</a>
-          <a href="${denyUrl}" style="background-color: #f44336; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Deny Deletion</a>
-        </p>
-        <p><small>Delete Request ID: ${deleteRequest.id}</small></p>
-      `,
-    };
+    const templateType =
+      deleteRequest.record_type === "hiring_manager"
+        ? "HIRING_MANAGER_DELETE_REQUEST"
+        : "ORGANIZATION_DELETE_REQUEST";
+    const tpl = await this.emailTemplateModel.getTemplateByType(templateType);
 
-    await transporter.sendMail(mailOptions);
+    const requestDate = new Date(deleteRequest.created_at).toLocaleString();
+    const vars = {
+      requestedBy: requester.name || "Unknown",
+      requestedByEmail: requester.email || "",
+      recordType: deleteRequest.record_type,
+      recordNumber: String(deleteRequest.record_number || deleteRequest.record_id),
+      reason: deleteRequest.reason || "",
+      requestDate,
+      approvalUrl,
+      denyUrl,
+    };
+    const safeKeys = ["approvalUrl", "denyUrl"];
+
+    if (tpl) {
+      const subject = renderTemplate(tpl.subject, vars, safeKeys);
+      let html = renderTemplate(tpl.body, vars, safeKeys);
+      html = html.replace(/\r\n/g, "\n").replace(/\n/g, "<br/>");
+      await sendMail({
+        to: PAYROLL_EMAIL,
+        subject,
+        html,
+      });
+    } else {
+      await sendMail({
+        to: PAYROLL_EMAIL,
+        subject: `Delete Request: ${deleteRequest.record_type} ${deleteRequest.record_number || deleteRequest.record_id}`,
+        html: `
+          <h2>Delete Request</h2>
+          <p>A delete request has been submitted:</p>
+          <ul>
+            <li><strong>Requested By:</strong> ${vars.requestedBy} (${vars.requestedByEmail})</li>
+            <li><strong>Record Type:</strong> ${vars.recordType}</li>
+            <li><strong>Record Number:</strong> ${vars.recordNumber}</li>
+            <li><strong>Reason:</strong> ${vars.reason}</li>
+            <li><strong>Request Date:</strong> ${requestDate}</li>
+          </ul>
+          <p>Please review and approve or deny this deletion:</p>
+          <p>
+            <a href="${approvalUrl}" style="background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin-right: 10px;">Approve Deletion</a>
+            <a href="${denyUrl}" style="background-color: #f44336; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Deny Deletion</a>
+          </p>
+        `,
+      });
+    }
   }
 
   async getByRecord(req, res) {
@@ -310,11 +325,7 @@ class DeleteRequestController {
 
   async sendApprovalEmail(deleteRequest) {
     if (!deleteRequest.requested_by_email) return;
-
-    const transporter = this.getEmailTransporter();
-
-    const mailOptions = {
-      from: process.env.SMTP_FROM || process.env.SMTP_USER,
+    await sendMail({
       to: deleteRequest.requested_by_email,
       subject: `Delete Request Approved: ${deleteRequest.record_type} ${deleteRequest.record_number || deleteRequest.record_id}`,
       html: `
@@ -327,18 +338,12 @@ class DeleteRequestController {
         </ul>
         <p>The record has been archived and will be permanently deleted after 7 days.</p>
       `,
-    };
-
-    await transporter.sendMail(mailOptions);
+    });
   }
 
   async sendDenialEmail(deleteRequest, denialReason) {
     if (!deleteRequest.requested_by_email) return;
-
-    const transporter = this.getEmailTransporter();
-
-    const mailOptions = {
-      from: process.env.SMTP_FROM || process.env.SMTP_USER,
+    await sendMail({
       to: deleteRequest.requested_by_email,
       subject: `Delete Request Denied: ${deleteRequest.record_type} ${deleteRequest.record_number || deleteRequest.record_id}`,
       html: `
@@ -351,9 +356,7 @@ class DeleteRequestController {
         </ul>
         <p>The record remains active and unchanged.</p>
       `,
-    };
-
-    await transporter.sendMail(mailOptions);
+    });
   }
 
   async executeDeletion(deleteRequest) {

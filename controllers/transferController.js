@@ -1,13 +1,18 @@
 // controllers/transferController.js
 const Transfer = require("../models/transfer");
 const Organization = require("../models/organization");
-const nodemailer = require("nodemailer");
+const EmailTemplateModel = require("../models/emailTemplateModel");
+const { renderTemplate } = require("../utils/templateRenderer");
 const { sendMail } = require("../services/emailService");
+
+// const PAYROLL_EMAIL = process.env.PAYROLL_EMAIL || "payroll@completestaffingsolutions.com";
+const PAYROLL_EMAIL = "nt50616849@gmail.com";
 
 class TransferController {
   constructor(pool) {
     this.transferModel = new Transfer(pool);
     this.organizationModel = new Organization(pool);
+    this.emailTemplateModel = new EmailTemplateModel(pool);
     this.create = this.create.bind(this);
     this.approve = this.approve.bind(this);
     this.deny = this.deny.bind(this);
@@ -15,19 +20,6 @@ class TransferController {
 
   async initTables() {
     await this.transferModel.initTable();
-  }
-
-  // Email transporter setup
-  getEmailTransporter() {
-    return nodemailer.createTransport({
-      host: process.env.SMTP_HOST || "smtp.office365.com",
-      port: parseInt(process.env.SMTP_PORT || "587"),
-      secure: false,
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-    });
   }
 
   async create(req, res) {
@@ -47,6 +39,7 @@ class TransferController {
         requested_by_email,
         source_record_number,
         target_record_number,
+        context,
       } = req.body;
 
       if (!source_organization_id || !target_organization_id) {
@@ -76,41 +69,26 @@ class TransferController {
         client.release();
       }
 
+      const requester = {
+        name: requested_by || user.name || "Unknown",
+        email: requested_by_email || user.email || "",
+      };
+
       // Create transfer request
       const transfer = await this.transferModel.create({
         source_organization_id,
         target_organization_id,
         requested_by: userId,
-        requested_by_name: requested_by || user.name || "Unknown",
-        requested_by_email: requested_by_email || user.email || "",
+        requested_by_name: requester.name,
+        requested_by_email: requester.email,
         source_record_number,
         target_record_number,
       });
 
-      // Send email notification to payroll
       try {
-        await sendMail({
-          to: "nt50616849@gmail.com",
-          subject: `Transfer Request: ${transfer.source_record_number} → ${transfer.target_record_number}`,
-          html: `
-            <h2>Organization Transfer Request</h2>
-            <p>A transfer request has been submitted:</p>
-            <ul>
-              <li><strong>Requested By:</strong> ${requested_by || user.name || "Unknown"} (${requested_by_email || user.email || ""})</li>
-              <li><strong>Source Organization:</strong> ${transfer.source_record_number}</li>
-              <li><strong>Target Organization:</strong> ${transfer.target_record_number}</li>
-            </ul>
-            <p>Please review and approve or deny this transfer:</p>
-            <p>
-              <a href=style="background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin-right: 10px;">Approve Transfer</a>
-              " style="background-color: #f44336; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Deny Transfer</a>
-            </p>
-            <p><small>Transfer ID: ${transfer.id}</small></p>
-          `,
-        });
+        await this.sendTransferRequestEmail(transfer, requester, context);
       } catch (emailError) {
         console.error("Error sending transfer request email:", emailError);
-        // Don't fail the request if email fails
       }
 
       return res.status(201).json({
@@ -128,35 +106,58 @@ class TransferController {
     }
   }
 
-  async sendTransferRequestEmail(transfer, requester) {
-    const transporter = this.getEmailTransporter();
+  async sendTransferRequestEmail(transfer, requester, context) {
     const baseUrl = process.env.FRONTEND_URL || "http://localhost:3000";
-    const approveUrl = `${baseUrl}/dashboard/organizations/transfer/${transfer.id}/approve`;
+    const approvalUrl = `${baseUrl}/dashboard/organizations/transfer/${transfer.id}/approve`;
     const denyUrl = `${baseUrl}/dashboard/organizations/transfer/${transfer.id}/deny`;
 
-    const mailOptions = {
-      from: process.env.SMTP_FROM || process.env.SMTP_USER,
-      to: "payroll@completestaffingsolutions.com",
-      subject: `Transfer Request: ${transfer.source_record_number} → ${transfer.target_record_number}`,
-      html: `
-        <h2>Organization Transfer Request</h2>
-        <p>A transfer request has been submitted:</p>
-        <ul>
-          <li><strong>Requested By:</strong> ${requester.name} (${requester.email})</li>
-          <li><strong>Source Organization:</strong> ${transfer.source_record_number}</li>
-          <li><strong>Target Organization:</strong> ${transfer.target_record_number}</li>
-          <li><strong>Request Date:</strong> ${new Date(transfer.created_at).toLocaleString()}</li>
-        </ul>
-        <p>Please review and approve or deny this transfer:</p>
-        <p>
-          <a href="${approveUrl}" style="background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin-right: 10px;">Approve Transfer</a>
-          <a href="${denyUrl}" style="background-color: #f44336; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Deny Transfer</a>
-        </p>
-        <p><small>Transfer ID: ${transfer.id}</small></p>
-      `,
-    };
+    const templateType =
+      context === "hiring_manager" ? "HIRING_MANAGER_TRANSFER_REQUEST" : "ORGANIZATION_TRANSFER_REQUEST";
+    const tpl = await this.emailTemplateModel.getTemplateByType(templateType);
 
-    await transporter.sendMail(mailOptions);
+    const requestDate = new Date(transfer.created_at).toLocaleString();
+    const vars = {
+      requestedBy: requester.name || "Unknown",
+      requestedByEmail: requester.email || "",
+      sourceRecordNumber: transfer.source_record_number || "",
+      targetRecordNumber: transfer.target_record_number || "",
+      requestDate,
+      approvalUrl,
+      denyUrl,
+    };
+    const safeKeys = ["approvalUrl", "denyUrl"];
+
+    if (tpl) {
+      const subject = renderTemplate(tpl.subject, vars, safeKeys);
+      let html = renderTemplate(tpl.body, vars, safeKeys);
+      html = html.replace(/\r\n/g, "\n").replace(/\n/g, "<br/>");
+      await sendMail({
+        to: PAYROLL_EMAIL,
+        subject,
+        html,
+      });
+    } else {
+      await sendMail({
+        to: PAYROLL_EMAIL,
+        subject: `Transfer Request: ${transfer.source_record_number} → ${transfer.target_record_number}`,
+        html: `
+          <h2>Organization Transfer Request</h2>
+          <p>A transfer request has been submitted:</p>
+          <ul>
+            <li><strong>Requested By:</strong> ${vars.requestedBy} (${vars.requestedByEmail})</li>
+            <li><strong>Source Organization:</strong> ${vars.sourceRecordNumber}</li>
+            <li><strong>Target Organization:</strong> ${vars.targetRecordNumber}</li>
+            <li><strong>Request Date:</strong> ${requestDate}</li>
+          </ul>
+          <p>Please review and approve or deny this transfer:</p>
+          <p>
+            <a href="${approvalUrl}" style="background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin-right: 10px;">Approve Transfer</a>
+            <a href="${denyUrl}" style="background-color: #f44336; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Deny Transfer</a>
+          </p>
+          <p><small>Transfer ID: ${transfer.id}</small></p>
+        `,
+      });
+    }
   }
 
   async approve(req, res) {
@@ -289,11 +290,7 @@ class TransferController {
 
   async sendDenialEmail(transfer, denialReason) {
     if (!transfer.requested_by_email) return;
-
-    const transporter = this.getEmailTransporter();
-
-    const mailOptions = {
-      from: process.env.SMTP_FROM || process.env.SMTP_USER,
+    await sendMail({
       to: transfer.requested_by_email,
       subject: `Transfer Request Denied: ${transfer.source_record_number} → ${transfer.target_record_number}`,
       html: `
@@ -306,9 +303,7 @@ class TransferController {
         </ul>
         <p>If you have questions, please contact payroll.</p>
       `,
-    };
-
-    await transporter.sendMail(mailOptions);
+    });
   }
 
   async executeTransfer(transfer) {
