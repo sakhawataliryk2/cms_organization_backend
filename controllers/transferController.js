@@ -90,7 +90,7 @@ class TransferController {
       // Send email notification to payroll
       try {
         await sendMail({
-          to: "payroll@completestaffingsolutions.com",
+          to: "nt50616849@gmail.com",
           subject: `Transfer Request: ${transfer.source_record_number} → ${transfer.target_record_number}`,
           html: `
             <h2>Organization Transfer Request</h2>
