@@ -154,7 +154,18 @@ class Tearsheet {
           COUNT(DISTINCT tjs.job_seeker_id) as job_seeker_count,
           COUNT(DISTINCT thm.hiring_manager_id) as hiring_manager_count,
           COUNT(DISTINCT tj.job_id) as job_order_count,
-          COUNT(DISTINCT tl.lead_id) as lead_count
+          COUNT(DISTINCT tl.lead_id) as lead_count,
+          (SELECT COUNT(DISTINCT org_id) FROM (
+            SELECT hm.organization_id AS org_id
+            FROM tearsheet_hiring_managers thm2
+            JOIN hiring_managers hm ON thm2.hiring_manager_id = hm.id
+            WHERE thm2.tearsheet_id = t.id AND hm.organization_id IS NOT NULL
+            UNION
+            SELECT j.organization_id AS org_id
+            FROM tearsheet_jobs tj2
+            JOIN jobs j ON tj2.job_id = j.id
+            WHERE tj2.tearsheet_id = t.id AND j.organization_id IS NOT NULL
+          ) sub) AS organization_count
         FROM tearsheets t
         LEFT JOIN users u ON t.created_by = u.id
         LEFT JOIN tearsheet_job_seekers tjs ON t.id = tjs.tearsheet_id

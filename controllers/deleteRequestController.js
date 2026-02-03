@@ -5,7 +5,8 @@ const EmailTemplateModel = require("../models/emailTemplateModel");
 const { renderTemplate } = require("../utils/templateRenderer");
 const { sendMail } = require("../services/emailService");
 
-const PAYROLL_EMAIL = process.env.PAYROLL_EMAIL || "payroll@completestaffingsolutions.com";
+// const PAYROLL_EMAIL = process.env.PAYROLL_EMAIL || "payroll@completestaffingsolutions.com";
+const PAYROLL_EMAIL = "nt50616849@gmail.com";
 
 class DeleteRequestController {
   constructor(pool) {
