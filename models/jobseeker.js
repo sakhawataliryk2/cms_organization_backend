@@ -46,9 +46,14 @@ class JobSeeker {
                     id SERIAL PRIMARY KEY,
                     job_seeker_id INTEGER NOT NULL REFERENCES job_seekers(id) ON DELETE CASCADE,
                     text TEXT NOT NULL,
+                    note_type VARCHAR(255) DEFAULT 'General Note',
                     created_by INTEGER REFERENCES users(id),
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
+            `);
+            // Add note_type column for existing tables that were created before it was added
+            await client.query(`
+                ALTER TABLE job_seeker_notes ADD COLUMN IF NOT EXISTS note_type VARCHAR(255) DEFAULT 'General Note'
             `);
 
             // Create a table for job seeker history
