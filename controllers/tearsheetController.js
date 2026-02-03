@@ -7,6 +7,8 @@ class TearsheetController {
     this.create = this.create.bind(this);
     this.getAll = this.getAll.bind(this);
     this.getRecords = this.getRecords.bind(this);
+    this.getOrganizations = this.getOrganizations.bind(this);
+    this.getPlacements = this.getPlacements.bind(this);
     this.delete = this.delete.bind(this);
     this.associate = this.associate.bind(this);
   }
@@ -113,6 +115,56 @@ class TearsheetController {
       return res.status(500).json({
         success: false,
         message: "Failed to fetch tearsheet records",
+        error: process.env.NODE_ENV === "production" ? undefined : error.message,
+      });
+    }
+  }
+
+  async getOrganizations(req, res) {
+    try {
+      const { id } = req.params;
+      if (!id || isNaN(parseInt(id))) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid tearsheet ID",
+        });
+      }
+      const organizations = await this.tearsheetModel.getOrganizations(parseInt(id));
+      return res.json({
+        success: true,
+        organizations,
+        count: organizations.length,
+      });
+    } catch (error) {
+      console.error("Error fetching tearsheet organizations:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to fetch organizations",
+        error: process.env.NODE_ENV === "production" ? undefined : error.message,
+      });
+    }
+  }
+
+  async getPlacements(req, res) {
+    try {
+      const { id } = req.params;
+      if (!id || isNaN(parseInt(id))) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid tearsheet ID",
+        });
+      }
+      const placements = await this.tearsheetModel.getPlacements(parseInt(id));
+      return res.json({
+        success: true,
+        placements,
+        count: placements.length,
+      });
+    } catch (error) {
+      console.error("Error fetching tearsheet placements:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to fetch placements",
         error: process.env.NODE_ENV === "production" ? undefined : error.message,
       });
     }

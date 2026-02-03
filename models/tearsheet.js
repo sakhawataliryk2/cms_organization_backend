@@ -165,7 +165,10 @@ class Tearsheet {
             FROM tearsheet_jobs tj2
             JOIN jobs j ON tj2.job_id = j.id
             WHERE tj2.tearsheet_id = t.id AND j.organization_id IS NOT NULL
-          ) sub) AS organization_count
+          ) sub) AS organization_count,
+          (SELECT COUNT(*) FROM placements p
+           WHERE EXISTS (SELECT 1 FROM tearsheet_job_seekers tjs WHERE tjs.tearsheet_id = t.id AND tjs.job_seeker_id = p.job_seeker_id)
+              OR EXISTS (SELECT 1 FROM tearsheet_jobs tj WHERE tj.tearsheet_id = t.id AND tj.job_id = p.job_id)) AS placement_count
         FROM tearsheets t
         LEFT JOIN users u ON t.created_by = u.id
         LEFT JOIN tearsheet_job_seekers tjs ON t.id = tjs.tearsheet_id
@@ -229,6 +232,58 @@ class Tearsheet {
       }
 
       const result = await client.query(query, [tearsheetId]);
+      return result.rows;
+    } finally {
+      client.release();
+    }
+  }
+
+  async getOrganizations(tearsheetId) {
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query(
+        `
+        SELECT DISTINCT o.id, o.name
+        FROM (
+          SELECT hm.organization_id AS org_id
+          FROM tearsheet_hiring_managers thm
+          JOIN hiring_managers hm ON thm.hiring_manager_id = hm.id
+          WHERE thm.tearsheet_id = $1 AND hm.organization_id IS NOT NULL
+          UNION
+          SELECT j.organization_id AS org_id
+          FROM tearsheet_jobs tj
+          JOIN jobs j ON tj.job_id = j.id
+          WHERE tj.tearsheet_id = $1 AND j.organization_id IS NOT NULL
+        ) sub
+        JOIN organizations o ON o.id = sub.org_id
+        ORDER BY o.name
+        `,
+        [tearsheetId]
+      );
+      return result.rows;
+    } finally {
+      client.release();
+    }
+  }
+
+  async getPlacements(tearsheetId) {
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query(
+        `
+        SELECT DISTINCT p.id, p.job_id, p.job_seeker_id, p.status, p.start_date,
+          js.first_name AS js_first_name, js.last_name AS js_last_name, js.email AS js_email,
+          j.job_title, o.name AS organization_name
+        FROM placements p
+        JOIN job_seekers js ON p.job_seeker_id = js.id
+        JOIN jobs j ON p.job_id = j.id
+        LEFT JOIN organizations o ON j.organization_id = o.id
+        WHERE EXISTS (SELECT 1 FROM tearsheet_job_seekers tjs WHERE tjs.tearsheet_id = $1 AND tjs.job_seeker_id = p.job_seeker_id)
+           OR EXISTS (SELECT 1 FROM tearsheet_jobs tj WHERE tj.tearsheet_id = $1 AND tj.job_id = p.job_id)
+        ORDER BY p.start_date DESC, p.id
+        `,
+        [tearsheetId]
+      );
       return result.rows;
     } finally {
       client.release();

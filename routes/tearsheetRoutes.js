@@ -10,6 +10,8 @@ function createTearsheetRouter(tearsheetController, authMiddleware) {
 
   router.get("/", tearsheetController.getAll);
   router.get("/:id/records", tearsheetController.getRecords);
+  router.get("/:id/organizations", tearsheetController.getOrganizations);
+  router.get("/:id/placements", tearsheetController.getPlacements);
   router.post("/", tearsheetController.create);
   router.post("/:id/associate", tearsheetController.associate);
   router.delete("/:id", tearsheetController.delete);
