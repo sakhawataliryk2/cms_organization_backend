@@ -15,16 +15,29 @@ class EmailTemplateController {
     }
   };
 
-  // Create a new email template
+  // Create a new email template (one template per type per section)
   createTemplate = async (req, res, next) => {
     try {
       const { template_name, subject, body, type } = req.body;
       if (!template_name || !subject || !body || !type) {
         return res.status(400).json({ success: false, message: "All fields are required." });
       }
+      const existing = await this.emailTemplateModel.getTemplateByType(type);
+      if (existing) {
+        return res.status(409).json({
+          success: false,
+          message: "A template for this type already exists. Each section allows only one template per type.",
+        });
+      }
       const newTemplate = await this.emailTemplateModel.createTemplate({ template_name, subject, body, type });
       return res.status(201).json({ success: true, template: newTemplate });
     } catch (err) {
+      if (err.code === "23505") {
+        return res.status(409).json({
+          success: false,
+          message: "A template for this type already exists. Each section allows only one template per type.",
+        });
+      }
       next(err);
     }
   };
@@ -53,17 +66,30 @@ class EmailTemplateController {
     }
   };
 
-  // Update template by ID
+  // Update template by ID (type cannot be changed to one already in use)
   updateTemplateById = async (req, res, next) => {
     try {
       const { id } = req.params;
       const { template_name, subject, body, type } = req.body;
+      const existingOfType = await this.emailTemplateModel.getTemplateByType(type);
+      if (existingOfType && Number(existingOfType.id) !== Number(id)) {
+        return res.status(409).json({
+          success: false,
+          message: "A template for this type already exists. Each section allows only one template per type.",
+        });
+      }
       const updatedTemplate = await this.emailTemplateModel.updateTemplateById({ id, template_name, subject, body, type });
       if (!updatedTemplate) {
         return res.status(404).json({ success: false, message: "Template not found." });
       }
       return res.json({ success: true, template: updatedTemplate });
     } catch (err) {
+      if (err.code === "23505") {
+        return res.status(409).json({
+          success: false,
+          message: "A template for this type already exists. Each section allows only one template per type.",
+        });
+      }
       next(err);
     }
   };
