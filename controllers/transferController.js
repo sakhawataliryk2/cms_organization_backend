@@ -116,6 +116,11 @@ class TransferController {
     const tpl = await this.emailTemplateModel.getTemplateByType(templateType);
 
     const requestDate = new Date(transfer.created_at).toLocaleString();
+    const approvalButtonHtml =
+      `<a href="${approvalUrl}" style="display:inline-block;background-color:#4CAF50;color:white;padding:10px 20px;text-decoration:none;border-radius:5px;margin-right:10px;">Approve Transfer</a>`;
+    const denyButtonHtml =
+      `<a href="${denyUrl}" style="display:inline-block;background-color:#f44336;color:white;padding:10px 20px;text-decoration:none;border-radius:5px;">Deny Transfer</a>`;
+
     const vars = {
       requestedBy: requester.name || "Unknown",
       requestedByEmail: requester.email || "",
@@ -125,11 +130,16 @@ class TransferController {
       approvalUrl,
       denyUrl,
     };
+    const bodyVars = {
+      ...vars,
+      approvalUrl: approvalButtonHtml,
+      denyUrl: denyButtonHtml,
+    };
     const safeKeys = ["approvalUrl", "denyUrl"];
 
     if (tpl) {
       const subject = renderTemplate(tpl.subject, vars, safeKeys);
-      let html = renderTemplate(tpl.body, vars, safeKeys);
+      let html = renderTemplate(tpl.body, bodyVars, safeKeys);
       html = html.replace(/\r\n/g, "\n").replace(/\n/g, "<br/>");
       await sendMail({
         to: PAYROLL_EMAIL,
