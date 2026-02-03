@@ -787,7 +787,7 @@ class JobSeekerController {
 
       const { id } = req.params;
 
-      const { text, note_type } = req.body;
+      const { text, note_type, email_notification } = req.body;
 
 
 
@@ -828,6 +828,51 @@ class JobSeekerController {
         note_type || 'General Note'
 
       );
+
+
+
+      // Send email notifications if provided (non-blocking - don't fail note creation if email fails)
+      if (email_notification && Array.isArray(email_notification) && email_notification.length > 0) {
+        try {
+          const emailService = require('../services/emailService');
+          const jobSeeker = await this.jobSeekerModel.getById(id);
+          const User = require('../models/user');
+          const userModel = new User(this.jobSeekerModel.pool);
+          const currentUser = await userModel.findById(userId);
+          const userName = currentUser?.name || 'System User';
+
+          const recipients = email_notification.filter(Boolean);
+          
+          if (recipients.length > 0) {
+            const seekerName = jobSeeker?.fullName || `Job Seeker #${id}`;
+            const subject = `New Note Added: ${seekerName}`;
+            const htmlContent = `
+              <html>
+                <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+                  <h2 style="color: #2563eb;">New Note Added</h2>
+                  <p><strong>Job Seeker:</strong> ${seekerName}</p>
+                  ${note_type ? `<p><strong>Note Type:</strong> ${note_type}</p>` : ''}
+                  <p><strong>Added by:</strong> ${userName}</p>
+                  <p><strong>Date:</strong> ${new Date().toLocaleString()}</p>
+                  <hr style="border: 1px solid #e5e7eb; margin: 20px 0;">
+                  <h3 style="color: #374151;">Note Text:</h3>
+                  <div style="background-color: #f9fafb; padding: 15px; border-radius: 5px; white-space: pre-wrap;">${text}</div>
+                </body>
+              </html>
+            `;
+
+            await emailService.sendMail({
+              to: recipients,
+              subject: subject,
+              html: htmlContent
+            });
+
+            console.log(`Email notifications sent to ${recipients.length} recipient(s) for job seeker note ${note.id}`);
+          }
+        } catch (emailError) {
+          console.error('Error sending email notifications:', emailError);
+        }
+      }
 
 
 

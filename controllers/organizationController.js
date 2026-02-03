@@ -402,7 +402,7 @@ class OrganizationController {
     async addNote(req, res) {
         try {
             const { id } = req.params;
-            const { text, action, about_references, aboutReferences } = req.body;
+            const { text, action, about_references, aboutReferences, email_notification } = req.body;
 
             // Validate required fields
             if (!text || !text.trim()) {
@@ -429,6 +429,53 @@ class OrganizationController {
 
             // Add the note
             const note = await this.organizationModel.addNote(id, text, userId, action, finalAboutReferences);
+
+            // Send email notifications if provided (non-blocking - don't fail note creation if email fails)
+            if (email_notification && Array.isArray(email_notification) && email_notification.length > 0) {
+                try {
+                    const emailService = require('../services/emailService');
+                    const organization = await this.organizationModel.getById(id);
+                    
+                    // Get current user info for email
+                    const User = require('../models/user');
+                    const userModel = new User(this.organizationModel.pool);
+                    const currentUser = await userModel.findById(userId);
+                    const userName = currentUser?.name || 'System User';
+
+                    // Format email recipients (can be email addresses or user names)
+                    const recipients = email_notification.filter(Boolean);
+                    
+                    if (recipients.length > 0) {
+                        const orgName = organization?.name || `Organization #${id}`;
+                        const subject = `New Note Added: ${orgName}`;
+                        const htmlContent = `
+                            <html>
+                                <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+                                    <h2 style="color: #2563eb;">New Note Added</h2>
+                                    <p><strong>Organization:</strong> ${orgName}</p>
+                                    <p><strong>Action:</strong> ${action}</p>
+                                    <p><strong>Added by:</strong> ${userName}</p>
+                                    <p><strong>Date:</strong> ${new Date().toLocaleString()}</p>
+                                    <hr style="border: 1px solid #e5e7eb; margin: 20px 0;">
+                                    <h3 style="color: #374151;">Note Text:</h3>
+                                    <div style="background-color: #f9fafb; padding: 15px; border-radius: 5px; white-space: pre-wrap;">${text}</div>
+                                </body>
+                            </html>
+                        `;
+
+                        await emailService.sendMail({
+                            to: recipients,
+                            subject: subject,
+                            html: htmlContent
+                        });
+
+                        console.log(`Email notifications sent to ${recipients.length} recipient(s) for organization note ${note.id}`);
+                    }
+                } catch (emailError) {
+                    // Log email error but don't fail the note creation
+                    console.error('Error sending email notifications:', emailError);
+                }
+            }
 
             return res.status(201).json({
                 success: true,

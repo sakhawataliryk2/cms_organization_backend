@@ -368,7 +368,7 @@ class PlacementController {
     async addNote(req, res) {
         try {
             const { id } = req.params;
-            const { text, action, about_references, aboutReferences } = req.body;
+            const { text, action, about_references, aboutReferences, email_notification } = req.body;
 
             if (!text || !text.trim()) {
                 return res.status(400).json({
@@ -404,6 +404,50 @@ class PlacementController {
 
             const finalAboutReferences = about_references || aboutReferences;
             const note = await this.placementModel.addNote(id, text, userId, action, finalAboutReferences);
+
+            // Send email notifications if provided (non-blocking - don't fail note creation if email fails)
+            if (email_notification && Array.isArray(email_notification) && email_notification.length > 0) {
+                try {
+                    const emailService = require('../services/emailService');
+                    const User = require('../models/user');
+                    const userModel = new User(this.placementModel.pool);
+                    const currentUser = await userModel.findById(userId);
+                    const userName = currentUser?.name || 'System User';
+
+                    const recipients = email_notification.filter(Boolean);
+                    
+                    if (recipients.length > 0) {
+                        const placementDisplay = placement.jobSeekerName && placement.jobTitle 
+                            ? `${placement.jobSeekerName} - ${placement.jobTitle}`
+                            : `Placement #${id}`;
+                        const subject = `New Note Added: ${placementDisplay}`;
+                        const htmlContent = `
+                            <html>
+                                <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+                                    <h2 style="color: #2563eb;">New Note Added</h2>
+                                    <p><strong>Placement:</strong> ${placementDisplay}</p>
+                                    <p><strong>Action:</strong> ${action}</p>
+                                    <p><strong>Added by:</strong> ${userName}</p>
+                                    <p><strong>Date:</strong> ${new Date().toLocaleString()}</p>
+                                    <hr style="border: 1px solid #e5e7eb; margin: 20px 0;">
+                                    <h3 style="color: #374151;">Note Text:</h3>
+                                    <div style="background-color: #f9fafb; padding: 15px; border-radius: 5px; white-space: pre-wrap;">${text}</div>
+                                </body>
+                            </html>
+                        `;
+
+                        await emailService.sendMail({
+                            to: recipients,
+                            subject: subject,
+                            html: htmlContent
+                        });
+
+                        console.log(`Email notifications sent to ${recipients.length} recipient(s) for placement note ${note.id}`);
+                    }
+                } catch (emailError) {
+                    console.error('Error sending email notifications:', emailError);
+                }
+            }
 
             return res.status(201).json({
                 success: true,

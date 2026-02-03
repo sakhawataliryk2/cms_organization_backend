@@ -395,7 +395,7 @@ class JobController {
     async addNote(req, res) {
         try {
             const { id } = req.params;
-            const { text } = req.body;
+            const { text, action, email_notification } = req.body;
 
             if (!text || !text.trim()) {
                 return res.status(400).json({
@@ -409,6 +409,49 @@ class JobController {
 
             // Add the note
             const note = await this.jobModel.addNote(id, text, userId);
+
+            // Send email notifications if provided (non-blocking - don't fail note creation if email fails)
+            if (email_notification && Array.isArray(email_notification) && email_notification.length > 0) {
+                try {
+                    const emailService = require('../services/emailService');
+                    const job = await this.jobModel.getById(id);
+                    const User = require('../models/user');
+                    const userModel = new User(this.jobModel.pool);
+                    const currentUser = await userModel.findById(userId);
+                    const userName = currentUser?.name || 'System User';
+
+                    const recipients = email_notification.filter(Boolean);
+                    
+                    if (recipients.length > 0) {
+                        const jobTitle = job?.title || `Job #${id}`;
+                        const subject = `New Note Added: ${jobTitle}`;
+                        const htmlContent = `
+                            <html>
+                                <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+                                    <h2 style="color: #2563eb;">New Note Added</h2>
+                                    <p><strong>Job:</strong> ${jobTitle}</p>
+                                    ${action ? `<p><strong>Action:</strong> ${action}</p>` : ''}
+                                    <p><strong>Added by:</strong> ${userName}</p>
+                                    <p><strong>Date:</strong> ${new Date().toLocaleString()}</p>
+                                    <hr style="border: 1px solid #e5e7eb; margin: 20px 0;">
+                                    <h3 style="color: #374151;">Note Text:</h3>
+                                    <div style="background-color: #f9fafb; padding: 15px; border-radius: 5px; white-space: pre-wrap;">${text}</div>
+                                </body>
+                            </html>
+                        `;
+
+                        await emailService.sendMail({
+                            to: recipients,
+                            subject: subject,
+                            html: htmlContent
+                        });
+
+                        console.log(`Email notifications sent to ${recipients.length} recipient(s) for job note ${note.id}`);
+                    }
+                } catch (emailError) {
+                    console.error('Error sending email notifications:', emailError);
+                }
+            }
 
             return res.status(201).json({
                 success: true,
