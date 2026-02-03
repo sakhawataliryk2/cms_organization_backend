@@ -13,6 +13,7 @@ class PlacementController {
         this.update = this.update.bind(this);
         this.delete = this.delete.bind(this);
         this.getByJobId = this.getByJobId.bind(this);
+        this.getByOrganizationId = this.getByOrganizationId.bind(this);
         this.getByJobSeekerId = this.getByJobSeekerId.bind(this);
 
         this.getDocuments = this.getDocuments.bind(this);
@@ -177,6 +178,37 @@ class PlacementController {
                 success: false,
                 message: 'An error occurred while retrieving the placement',
                 error: process.env.NODE_ENV === 'production' ? undefined : error.message
+            });
+        }
+    }
+
+    // Get placements by organization ID
+    async getByOrganizationId(req, res) {
+        try {
+            const { organizationId } = req.params;
+            if (!organizationId) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Organization ID is required',
+                });
+            }
+            const userId = req.user.id;
+            const userRole = req.user.role;
+            const placements = await this.placementModel.findByOrganizationId(
+                organizationId,
+                ['admin', 'owner', 'developer'].includes(userRole) ? null : userId
+            );
+            res.status(200).json({
+                success: true,
+                count: placements.length,
+                placements,
+            });
+        } catch (error) {
+            console.error('Error getting placements by organization ID:', error);
+            res.status(500).json({
+                success: false,
+                message: 'An error occurred while retrieving placements',
+                error: process.env.NODE_ENV === 'production' ? undefined : error.message,
             });
         }
     }

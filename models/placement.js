@@ -370,6 +370,48 @@ class Placement {
         }
     }
 
+    // Get placements by organization ID (defaults to status = 'Approved')
+    async findByOrganizationId(organizationId, userId = null, status = 'Approved') {
+        const client = await this.pool.connect();
+        try {
+            let query = `
+                SELECT
+                    p.*,
+                    j.job_title,
+                    j.status AS job_status,
+                    js.first_name,
+                    js.last_name,
+                    js.email AS job_seeker_email,
+                    js.phone AS job_seeker_phone,
+                    u.name AS created_by_name,
+                    o.name AS organization_name
+                FROM placements p
+                LEFT JOIN jobs j ON p.job_id = j.id
+                LEFT JOIN job_seekers js ON p.job_seeker_id = js.id
+                LEFT JOIN users u ON p.created_by = u.id
+                LEFT JOIN organizations o ON COALESCE(p.organization_id, j.organization_id) = o.id
+                WHERE COALESCE(p.organization_id, j.organization_id) = $1
+            `;
+            const params = [organizationId];
+            if (status) {
+                query += ` AND p.status = $${params.length + 1}`;
+                params.push(status);
+            }
+            if (userId) {
+                query += ` AND p.created_by = $${params.length + 1}`;
+                params.push(userId);
+            }
+            query += ` ORDER BY p.start_date DESC, p.created_at DESC`;
+            const result = await client.query(query, params);
+            return result.rows.map((row) => this.formatPlacement(row));
+        } catch (error) {
+            console.error('Error finding placements by organization ID:', error);
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
+
     // Get distinct organization IDs that have at least one placement with status = 'Approved'
     async findOrganizationIdsWithApprovedPlacements(userId = null) {
         const client = await this.pool.connect();
