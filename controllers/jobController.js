@@ -436,6 +436,12 @@ class JobController {
                                     <hr style="border: 1px solid #e5e7eb; margin: 20px 0;">
                                     <h3 style="color: #374151;">Note Text:</h3>
                                     <div style="background-color: #f9fafb; padding: 15px; border-radius: 5px; white-space: pre-wrap;">${text}</div>
+                                    <p style="margin-top: 25px;">
+                                        <a href="${process.env.FRONTEND_URL ? `${process.env.FRONTEND_URL}/dashboard/jobs/view?id=${id}&tab=notes` : `https://cms-organization.vercel.app/dashboard/jobs/view?id=${id}&tab=notes`}"
+                                           style="color: #2563eb; text-decoration: underline;"
+                                           target="_blank"
+                                        >View This Note Online</a>
+                                    </p>
                                 </body>
                             </html>
                         `;

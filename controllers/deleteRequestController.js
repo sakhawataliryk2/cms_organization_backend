@@ -105,7 +105,7 @@ class DeleteRequestController {
   }
 
   async sendDeleteRequestEmail(deleteRequest, requester) {
-    const baseUrl = process.env.FRONTEND_URL || "http://localhost:3000";
+    const baseUrl = process.env.FRONTEND_URL || "https://cms-organization.vercel.app";
     let recordPath = "organizations";
     if (deleteRequest.record_type === "hiring_manager") {
       recordPath = "hiring-managers";
