@@ -295,6 +295,23 @@ class OrganizationController {
                 });
             }
 
+            // Resolve parent organization: if parent_organization is numeric, treat as org ID and fetch name
+            const parentOrgRaw = organization.parent_organization;
+            if (parentOrgRaw && typeof parentOrgRaw === 'string' && /^\d+$/.test(parentOrgRaw.trim())) {
+                try {
+                    const parentOrg = await this.organizationModel.getById(parentOrgRaw.trim(), null);
+                    if (parentOrg) {
+                        organization.parent_organization_id = parentOrg.id;
+                        organization.parent_organization_name = parentOrg.name || parentOrgRaw;
+                    }
+                } catch (e) {
+                    console.error('Error resolving parent organization:', e);
+                }
+            } else if (parentOrgRaw && (typeof parentOrgRaw === 'string' && parentOrgRaw.trim() !== '')) {
+                // Store as name when it's not a numeric ID
+                organization.parent_organization_name = parentOrgRaw;
+            }
+
             res.status(200).json({
                 success: true,
                 organization

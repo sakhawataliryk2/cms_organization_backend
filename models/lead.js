@@ -151,13 +151,15 @@ class Lead {
             zipCode,
             dateAdded,
             userId,
-            customFields = {},
             hiringManagerIds = [],
             jobSeekerIds = [],
             jobIds = [],
             placementIds = [],
             opportunityIds = []
         } = leadData;
+
+        // Accept both custom_fields (from API) and customFields (camelCase) - same as organizations
+        const customFields = leadData.custom_fields || leadData.customFields || {};
 
         console.log("Lead model - create function input:", JSON.stringify(leadData, null, 2));
 

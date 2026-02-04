@@ -5,6 +5,30 @@ class HiringManager {
         this.pool = pool;
     }
 
+    /**
+     * Normalize organization display so API always returns consistent shape.
+     * Prefer name from JOIN (organizations table) over denormalized organization_name column,
+     * which can be null, stale, or incorrectly store id (e.g. "58"). If the column value
+     * looks like a bare number (id), do not use it as the name so clients get id + name from JOIN only.
+     */
+    _normalizeOrganization(row) {
+        if (!row) return row;
+        const fromJoin = row.organization_name_from_org;
+        const fromColumn = row.organization_name;
+        const columnStr = fromColumn != null ? String(fromColumn).trim() : '';
+        const columnLooksLikeId = /^\d+$/.test(columnStr);
+        const name = (fromJoin != null && fromJoin !== '')
+            ? fromJoin
+            : (fromColumn != null && fromColumn !== '' && !columnLooksLikeId)
+                ? fromColumn
+                : null;
+        return { ...row, organization_name: name ?? null };
+    }
+
+    _normalizeOrganizationList(rows) {
+        return Array.isArray(rows) ? rows.map((r) => this._normalizeOrganization(r)) : rows;
+    }
+
     // Initialize the hiring_managers table if it doesn't exist
     async initTable() {
         let client;
@@ -365,7 +389,7 @@ class HiringManager {
             query += ` ORDER BY hm.created_at DESC`;
 
             const result = await client.query(query, values);
-            return result.rows;
+            return this._normalizeOrganizationList(result.rows);
         } catch (error) {
             throw error;
         } finally {
@@ -395,7 +419,8 @@ class HiringManager {
             }
 
             const result = await client.query(query, values);
-            return result.rows[0] || null;
+            const row = result.rows[0] || null;
+            return row ? this._normalizeOrganization(row) : null;
         } catch (error) {
             throw error;
         } finally {
@@ -799,7 +824,7 @@ class HiringManager {
             query += ` ORDER BY hm.created_at DESC`;
 
             const result = await client.query(query, values);
-            return result.rows;
+            return this._normalizeOrganizationList(result.rows);
         } catch (error) {
             throw error;
         } finally {
