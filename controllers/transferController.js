@@ -6,7 +6,7 @@ const { renderTemplate } = require("../utils/templateRenderer");
 const { sendMail } = require("../services/emailService");
 
 // const PAYROLL_EMAIL = process.env.PAYROLL_EMAIL || "payroll@completestaffingsolutions.com";
-const PAYROLL_EMAIL = "nt50616849@gmail.com";
+const PAYROLL_EMAIL = "yasirrehman274@gmail.com";
 
 class TransferController {
   constructor(pool) {
