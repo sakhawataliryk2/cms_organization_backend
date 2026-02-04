@@ -11,6 +11,7 @@ class TearsheetController {
     this.getPlacements = this.getPlacements.bind(this);
     this.delete = this.delete.bind(this);
     this.associate = this.associate.bind(this);
+    this.getTearsheetsForOrganization = this.getTearsheetsForOrganization.bind(this);
   }
 
   async initTables() {
@@ -235,6 +236,31 @@ class TearsheetController {
         success: false,
         message: 'Failed to associate record with tearsheet',
         error: error.message,
+      });
+    }
+  }
+
+  async getTearsheetsForOrganization(req, res) {
+    try {
+      const { organizationId } = req.params;
+      if (!organizationId || isNaN(parseInt(organizationId))) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid organization ID",
+        });
+      }
+      const tearsheets = await this.tearsheetModel.getTearsheetsForOrganization(parseInt(organizationId));
+      return res.json({
+        success: true,
+        tearsheets,
+        count: tearsheets.length,
+      });
+    } catch (error) {
+      console.error("Error fetching tearsheets for organization:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to fetch tearsheets",
+        error: process.env.NODE_ENV === "production" ? undefined : error.message,
       });
     }
   }

@@ -352,6 +352,33 @@ class Tearsheet {
     }
   }
 
+  async getTearsheetsForOrganization(organizationId) {
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query(
+        `
+        SELECT DISTINCT t.id, t.name, t.created_at
+        FROM tearsheets t
+        WHERE EXISTS (
+          SELECT 1 FROM tearsheet_hiring_managers thm
+          JOIN hiring_managers hm ON thm.hiring_manager_id = hm.id
+          WHERE thm.tearsheet_id = t.id AND hm.organization_id = $1
+        )
+        OR EXISTS (
+          SELECT 1 FROM tearsheet_jobs tj
+          JOIN jobs j ON tj.job_id = j.id
+          WHERE tj.tearsheet_id = t.id AND j.organization_id = $1
+        )
+        ORDER BY t.name
+        `,
+        [organizationId]
+      );
+      return result.rows;
+    } finally {
+      client.release();
+    }
+  }
+
 }
 
 module.exports = Tearsheet;
