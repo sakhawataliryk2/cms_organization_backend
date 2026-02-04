@@ -103,7 +103,6 @@ const checkRole = (...roles) => {
                 message: 'Access denied. Insufficient permissions.'
             });
         }
-
         next();
     };
 };
