@@ -109,7 +109,7 @@ class TransferController {
   }
 
   async sendTransferRequestEmail(transfer, requester, context) {
-    const baseUrl = process.env.FRONTEND_URL || "http://localhost:3000";
+    const baseUrl = "https://cms-organization.vercel.app";
     const approvalUrl = `${baseUrl}/dashboard/organizations/transfer/${transfer.id}/approve`;
     const denyUrl = `${baseUrl}/dashboard/organizations/transfer/${transfer.id}/deny`;
 
