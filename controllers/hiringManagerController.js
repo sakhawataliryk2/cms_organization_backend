@@ -381,8 +381,6 @@ class HiringManagerController {
             const { id } = req.params;
             const { text, action, email_notification } = req.body;
 
-            console.log(`Adding note to hiring manager ${id}`);
-
             // Validate ID format
             if (!id || isNaN(parseInt(id))) {
                 return res.status(400).json({
@@ -403,8 +401,6 @@ class HiringManagerController {
 
             // Add the note
             const note = await this.hiringManagerModel.addNote(id, text, userId);
-
-            console.log("Note added successfully:", note);
 
             // Send email notifications if provided (non-blocking - don't fail note creation if email fails)
             if (email_notification && Array.isArray(email_notification) && email_notification.length > 0) {
@@ -447,8 +443,6 @@ class HiringManagerController {
                             subject: subject,
                             html: htmlContent
                         });
-
-                        console.log(`Email notifications sent to ${recipients.length} recipient(s) for hiring manager note ${note.id}`);
                     }
                 } catch (emailError) {
                     console.error('Error sending email notifications:', emailError);

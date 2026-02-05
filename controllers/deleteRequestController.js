@@ -125,11 +125,13 @@ class DeleteRequestController {
     const denyButtonHtml =
       `<a href="${denyUrl}" style="display:inline-block;background-color:#f44336;color:white;padding:10px 20px;text-decoration:none;border-radius:5px;">Deny Deletion</a>`;
 
+    const recordDisplay = String(deleteRequest.record_number || deleteRequest.record_id);
     const vars = {
       requestedBy: requester.name || "Unknown",
       requestedByEmail: requester.email || "",
       recordType: deleteRequest.record_type,
-      recordNumber: String(deleteRequest.record_number || deleteRequest.record_id),
+      recordNumber: recordDisplay,
+      requestId: String(deleteRequest.id),
       reason: deleteRequest.reason || "",
       requestDate,
       approvalUrl,
@@ -154,18 +156,19 @@ class DeleteRequestController {
     } else {
       await sendMail({
         to: PAYROLL_EMAIL,
-        subject: `Delete Request: ${deleteRequest.record_type} ${deleteRequest.record_number || deleteRequest.record_id}`,
+        subject: `Delete Request: ${deleteRequest.record_type} ${recordDisplay}`,
         html: `
           <h2>Delete Request</h2>
-          <p>A delete request has been submitted:</p>
+          <p>A new organization delete request has been submitted and requires your review.</p>
+          <p><strong>Request Details:</strong></p>
           <ul>
+            <li><strong>Request ID:</strong> ${vars.requestId} (this ID is used in the approval link)</li>
+            <li><strong>Record (Organization):</strong> ${recordDisplay}</li>
             <li><strong>Requested By:</strong> ${vars.requestedBy} (${vars.requestedByEmail})</li>
-            <li><strong>Record Type:</strong> ${vars.recordType}</li>
-            <li><strong>Record Number:</strong> ${vars.recordNumber}</li>
-            <li><strong>Reason:</strong> ${vars.reason}</li>
             <li><strong>Request Date:</strong> ${requestDate}</li>
+            <li><strong>Reason:</strong> ${vars.reason}</li>
           </ul>
-          <p>Please review and approve or deny this deletion:</p>
+          <p>Please review the request and take the appropriate action using the links below:</p>
           <p>
             <a href="${approvalUrl}" style="background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin-right: 10px;">Approve Deletion</a>
             <a href="${denyUrl}" style="background-color: #f44336; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Deny Deletion</a>
@@ -217,9 +220,10 @@ class DeleteRequestController {
       }
 
       if (deleteRequest.status !== "pending") {
+        const recordDisplay = deleteRequest.record_number || deleteRequest.record_id;
         return res.status(400).json({
           success: false,
-          message: `Delete request is already ${deleteRequest.status}`,
+          message: `Delete request for ${deleteRequest.record_type} ${recordDisplay} has already been ${deleteRequest.status}. The record may already be archived.`,
         });
       }
 
