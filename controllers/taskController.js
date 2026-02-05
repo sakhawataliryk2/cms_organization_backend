@@ -1,4 +1,5 @@
 const Task = require('../models/task');
+const { sendMail } = require('../services/emailService');
 
 class TaskController {
     constructor(pool) {
@@ -14,6 +15,7 @@ class TaskController {
         this.getStats = this.getStats.bind(this);
         this.markComplete = this.markComplete.bind(this);
         this.markIncomplete = this.markIncomplete.bind(this);
+        this.processReminders = this.processReminders.bind(this);
     }
 
     // Initialize database tables
@@ -247,6 +249,51 @@ class TaskController {
                 success: false,
                 message: 'An error occurred while updating the task',
                 error: process.env.NODE_ENV === 'production' ? undefined : error.message
+            });
+        }
+    }
+
+    // Process task reminders: send email to owner (created_by) and assigned_to at designated time
+    async processReminders(req, res) {
+        try {
+            const tasks = await this.taskModel.getTasksDueForReminder();
+            const results = { sent: 0, errors: [] };
+            for (const task of tasks) {
+                const emails = [];
+                if (task.created_by_email) emails.push(task.created_by_email);
+                if (task.assigned_to_email && task.assigned_to_email !== task.created_by_email) emails.push(task.assigned_to_email);
+                if (emails.length === 0) {
+                    results.errors.push({ taskId: task.id, error: 'No email for owner or assigned to' });
+                    await this.taskModel.markReminderSent(task.id);
+                    continue;
+                }
+                const dueStr = task.due_date && task.due_time
+                    ? `${task.due_date} ${task.due_time}`
+                    : task.due_date || 'Not set';
+                try {
+                    await sendMail({
+                        to: emails,
+                        subject: `Task reminder: ${task.title || 'Task'}`,
+                        html: `<p>This is a reminder for the following task:</p><p><strong>${task.title || 'Task'}</strong></p><p>Due: ${dueStr}</p><p>You are receiving this as the task owner or assignee.</p>`,
+                        text: `Task reminder: ${task.title || 'Task'}. Due: ${dueStr}.`,
+                    });
+                    await this.taskModel.markReminderSent(task.id);
+                    results.sent++;
+                } catch (err) {
+                    results.errors.push({ taskId: task.id, error: err.message });
+                }
+            }
+            res.status(200).json({
+                success: true,
+                message: `Processed ${tasks.length} task(s), sent ${results.sent} reminder(s)`,
+                ...results,
+            });
+        } catch (error) {
+            console.error('Error processing task reminders:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Failed to process reminders',
+                error: process.env.NODE_ENV === 'production' ? undefined : error.message,
             });
         }
     }

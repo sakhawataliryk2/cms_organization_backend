@@ -53,6 +53,19 @@ class Task {
                 END $$;
             `);
 
+            // Reminder: minutes before due to send email to owner and assigned_to
+            await client.query(`
+                DO $$ 
+                BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='tasks' AND column_name='reminder_minutes_before_due') THEN
+                        ALTER TABLE tasks ADD COLUMN reminder_minutes_before_due INTEGER;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='tasks' AND column_name='reminder_sent_at') THEN
+                        ALTER TABLE tasks ADD COLUMN reminder_sent_at TIMESTAMP;
+                    END IF;
+                END $$;
+            `);
+
             // Create task notes table
             await client.query(`
                 CREATE TABLE IF NOT EXISTS task_notes (
@@ -113,10 +126,13 @@ class Task {
             status,
             assignedTo,
             assigned_to, // Support both formats
+            reminderMinutesBeforeDue,
+            reminder_minutes_before_due,
             userId,
             customFields,
             custom_fields // Support both formats
         } = taskData;
+        const finalReminderMinutes = reminderMinutesBeforeDue ?? reminder_minutes_before_due;
 
         // Use organizationId or organization_id (prefer organizationId)
         const finalOrganizationId = organizationId || organization_id;
@@ -175,9 +191,10 @@ class Task {
                     status,
                     assigned_to,
                     created_by,
-                    custom_fields
+                    custom_fields,
+                    reminder_minutes_before_due
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
                 RETURNING *
             `;
 
@@ -198,7 +215,8 @@ class Task {
                 status || 'Pending',
                 finalAssignedTo && finalAssignedTo !== '' ? parseInt(finalAssignedTo) : null,
                 userId,
-                customFieldsJson
+                customFieldsJson,
+                finalReminderMinutes != null ? parseInt(finalReminderMinutes) : null
             ];
             
             console.log("Insert values:", values);
@@ -294,6 +312,7 @@ class Task {
                        hm.first_name || ' ' || hm.last_name as hiring_manager_name,
                        j.job_title as job_title,
                        l.first_name || ' ' || l.last_name as lead_name,
+                       o.name as organization_name,
                        uc.name as completed_by_name
                 FROM tasks t
                 LEFT JOIN users u ON t.created_by = u.id
@@ -303,6 +322,7 @@ class Task {
                 LEFT JOIN hiring_managers hm ON t.hiring_manager_id = hm.id
                 LEFT JOIN jobs j ON t.job_id = j.id
                 LEFT JOIN leads l ON t.lead_id = l.id
+                LEFT JOIN organizations o ON t.organization_id = o.id
                 WHERE t.id = $1
             `;
 
@@ -366,6 +386,7 @@ class Task {
                 priority: 'priority',
                 status: 'status',
                 assignedTo: 'assigned_to',
+                reminderMinutesBeforeDue: 'reminder_minutes_before_due',
                 customFields: 'custom_fields'
             };
 
@@ -420,6 +441,8 @@ class Task {
                     // Handle numeric conversions
                     if (['organizationId', 'jobSeekerId', 'hiringManagerId', 'jobId', 'leadId', 'placementId', 'assignedTo'].includes(key)) {
                         queryParams.push(value ? parseInt(value) : null);
+                    } else if (key === 'reminderMinutesBeforeDue') {
+                        queryParams.push(value != null && value !== '' ? parseInt(value) : null);
                     } else if (key === 'isCompleted') {
                         queryParams.push(Boolean(value));
                     } else {
@@ -532,6 +555,48 @@ class Task {
             return result.rows[0];
         } catch (error) {
             await client.query('ROLLBACK');
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
+
+    // Get tasks that are due for reminder (within their reminder window, not yet sent)
+    async getTasksDueForReminder() {
+        const client = await this.pool.connect();
+        try {
+            const query = `
+                SELECT t.id, t.title, t.due_date, t.due_time, t.owner, t.reminder_minutes_before_due,
+                       t.created_by, t.assigned_to,
+                       u.email as created_by_email, u.name as created_by_name,
+                       u2.email as assigned_to_email, u2.name as assigned_to_name
+                FROM tasks t
+                LEFT JOIN users u ON t.created_by = u.id
+                LEFT JOIN users u2 ON t.assigned_to = u2.id
+                WHERE t.reminder_minutes_before_due IS NOT NULL
+                  AND t.reminder_sent_at IS NULL
+                  AND (t.is_completed IS NULL OR t.is_completed = false)
+                  AND t.due_date IS NOT NULL
+                  AND ((t.due_date + coalesce(t.due_time, '00:00'::time))::timestamp
+                       - (t.reminder_minutes_before_due || ' minutes')::interval) <= now()
+            `;
+            const result = await client.query(query);
+            return result.rows;
+        } catch (error) {
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
+
+    async markReminderSent(taskId) {
+        const client = await this.pool.connect();
+        try {
+            await client.query(
+                'UPDATE tasks SET reminder_sent_at = NOW() WHERE id = $1',
+                [taskId]
+            );
+        } catch (error) {
             throw error;
         } finally {
             client.release();

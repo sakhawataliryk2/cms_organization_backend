@@ -62,6 +62,15 @@ class Tearsheet {
         )
       `);
 
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS tearsheet_organizations (
+          tearsheet_id INTEGER REFERENCES tearsheets(id) ON DELETE CASCADE,
+          organization_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE,
+          added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (tearsheet_id, organization_id)
+        )
+      `);
+
       // Migrate existing data from single FKs to junction tables
       await client.query(`
         INSERT INTO tearsheet_job_seekers (tearsheet_id, job_seeker_id)
@@ -291,6 +300,10 @@ class Tearsheet {
         `
         SELECT DISTINCT o.id, o.name
         FROM (
+          SELECT organization_id AS org_id
+          FROM tearsheet_organizations
+          WHERE tearsheet_id = $1
+          UNION
           SELECT hm.organization_id AS org_id
           FROM tearsheet_hiring_managers thm
           JOIN hiring_managers hm ON thm.hiring_manager_id = hm.id
@@ -305,6 +318,24 @@ class Tearsheet {
         ORDER BY o.name
         `,
         [tearsheetId]
+      );
+      return result.rows;
+    } finally {
+      client.release();
+    }
+  }
+
+  async getTearsheetsByOrganizationId(organizationId) {
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query(
+        `
+        SELECT DISTINCT t.id, t.name, t.visibility, t.created_at
+        FROM tearsheets t
+        INNER JOIN tearsheet_organizations to2 ON to2.tearsheet_id = t.id AND to2.organization_id = $1
+        ORDER BY t.name
+        `,
+        [organizationId]
       );
       return result.rows;
     } finally {
@@ -351,10 +382,18 @@ class Tearsheet {
   }
 
   async associate(tearsheetId, data) {
-    const { job_seeker_id, hiring_manager_id, job_id, lead_id } = data;
+    const { job_seeker_id, hiring_manager_id, job_id, lead_id, organization_id } = data;
     const client = await this.pool.connect();
     try {
       console.log(`Starting association for tearsheet ${tearsheetId}`, data);
+
+      if (organization_id) {
+        console.log(`Adding organization ${organization_id} to tearsheet ${tearsheetId}`);
+        await client.query(
+          `INSERT INTO tearsheet_organizations (tearsheet_id, organization_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+          [tearsheetId, organization_id]
+        );
+      }
 
       if (job_seeker_id) {
         console.log(`Adding job seeker ${job_seeker_id} to tearsheet ${tearsheetId}`);

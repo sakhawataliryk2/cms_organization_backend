@@ -9,6 +9,7 @@ function createTearsheetRouter(tearsheetController, authMiddleware) {
   router.use(verifyToken);
 
   router.get("/", tearsheetController.getAll);
+  router.get("/organization/:organizationId", tearsheetController.getTearsheetsByOrganizationId);
   router.get("/:id", tearsheetController.getById);
   router.get("/:id/records", tearsheetController.getRecords);
   router.get("/:id/organizations", tearsheetController.getOrganizations);

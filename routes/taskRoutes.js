@@ -11,6 +11,9 @@ function createTaskRouter(taskController, authMiddleware) {
     // (admins see all, regular users see only their own or assigned to them)
     router.get('/', taskController.getAll);
 
+    // Process reminders (call via cron or manually) - sends email to owner and assigned_to
+    router.get('/process-reminders', taskController.processReminders);
+
     // Get task by ID 
     // (admins can see any, regular users only their own or assigned to them)
     router.get('/:id', taskController.getById);

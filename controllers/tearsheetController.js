@@ -9,6 +9,7 @@ class TearsheetController {
     this.getById = this.getById.bind(this);
     this.getRecords = this.getRecords.bind(this);
     this.getOrganizations = this.getOrganizations.bind(this);
+    this.getTearsheetsByOrganizationId = this.getTearsheetsByOrganizationId.bind(this);
     this.getPlacements = this.getPlacements.bind(this);
     this.delete = this.delete.bind(this);
     this.associate = this.associate.bind(this);
@@ -173,6 +174,30 @@ class TearsheetController {
     }
   }
 
+  async getTearsheetsByOrganizationId(req, res) {
+    try {
+      const { organizationId } = req.params;
+      if (!organizationId || isNaN(parseInt(organizationId))) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid organization ID",
+        });
+      }
+      const tearsheets = await this.tearsheetModel.getTearsheetsByOrganizationId(parseInt(organizationId));
+      return res.json({
+        success: true,
+        tearsheets,
+      });
+    } catch (error) {
+      console.error("Error fetching tearsheets for organization:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to fetch tearsheets for organization",
+        error: process.env.NODE_ENV === "production" ? undefined : error.message,
+      });
+    }
+  }
+
   async getPlacements(req, res) {
     try {
       const { id } = req.params;
@@ -235,9 +260,9 @@ class TearsheetController {
   async associate(req, res) {
     try {
       const { id } = req.params;
-      const { job_seeker_id, hiring_manager_id, job_id, lead_id } = req.body;
+      const { job_seeker_id, hiring_manager_id, job_id, lead_id, organization_id } = req.body;
 
-      console.log('Associating record with tearsheet:', { id, job_seeker_id, hiring_manager_id, job_id, lead_id });
+      console.log('Associating record with tearsheet:', { id, job_seeker_id, hiring_manager_id, job_id, lead_id, organization_id });
 
       if (!id || isNaN(parseInt(id))) {
         return res.status(400).json({
@@ -251,6 +276,7 @@ class TearsheetController {
         hiring_manager_id: hiring_manager_id ? parseInt(hiring_manager_id) : null,
         job_id: job_id ? parseInt(job_id) : null,
         lead_id: lead_id ? parseInt(lead_id) : null,
+        organization_id: organization_id ? parseInt(organization_id) : null,
       });
 
       return res.json({
