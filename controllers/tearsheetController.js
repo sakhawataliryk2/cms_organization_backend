@@ -6,6 +6,7 @@ class TearsheetController {
     this.tearsheetModel = new Tearsheet(pool);
     this.create = this.create.bind(this);
     this.getAll = this.getAll.bind(this);
+    this.getById = this.getById.bind(this);
     this.getRecords = this.getRecords.bind(this);
     this.getOrganizations = this.getOrganizations.bind(this);
     this.getPlacements = this.getPlacements.bind(this);
@@ -27,6 +28,33 @@ class TearsheetController {
       return res.status(500).json({
         success: false,
         message: "Failed to fetch tearsheets",
+        error: process.env.NODE_ENV === "production" ? undefined : error.message,
+      });
+    }
+  }
+
+  async getById(req, res) {
+    try {
+      const { id } = req.params;
+      if (!id || isNaN(parseInt(id))) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid tearsheet ID",
+        });
+      }
+      const tearsheet = await this.tearsheetModel.getById(parseInt(id));
+      if (!tearsheet) {
+        return res.status(404).json({
+          success: false,
+          message: "Tearsheet not found",
+        });
+      }
+      return res.json({ success: true, tearsheet });
+    } catch (error) {
+      console.error("Error fetching tearsheet:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to fetch tearsheet",
         error: process.env.NODE_ENV === "production" ? undefined : error.message,
       });
     }

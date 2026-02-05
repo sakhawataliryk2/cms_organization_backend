@@ -184,6 +184,51 @@ class Tearsheet {
     }
   }
 
+  async getById(id) {
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query(`
+        SELECT
+          t.id,
+          t.name,
+          t.visibility,
+          t.created_at,
+          t.updated_at,
+          u.name AS owner_name,
+          u.id AS owner_id,
+          COUNT(DISTINCT tjs.job_seeker_id) as job_seeker_count,
+          COUNT(DISTINCT thm.hiring_manager_id) as hiring_manager_count,
+          COUNT(DISTINCT tj.job_id) as job_order_count,
+          COUNT(DISTINCT tl.lead_id) as lead_count,
+          (SELECT COUNT(DISTINCT org_id) FROM (
+            SELECT hm.organization_id AS org_id
+            FROM tearsheet_hiring_managers thm2
+            JOIN hiring_managers hm ON thm2.hiring_manager_id = hm.id
+            WHERE thm2.tearsheet_id = t.id AND hm.organization_id IS NOT NULL
+            UNION
+            SELECT j.organization_id AS org_id
+            FROM tearsheet_jobs tj2
+            JOIN jobs j ON tj2.job_id = j.id
+            WHERE tj2.tearsheet_id = t.id AND j.organization_id IS NOT NULL
+          ) sub) AS organization_count,
+          (SELECT COUNT(*) FROM placements p
+           WHERE EXISTS (SELECT 1 FROM tearsheet_job_seekers tjs WHERE tjs.tearsheet_id = t.id AND tjs.job_seeker_id = p.job_seeker_id)
+              OR EXISTS (SELECT 1 FROM tearsheet_jobs tj WHERE tj.tearsheet_id = t.id AND tj.job_id = p.job_id)) AS placement_count
+        FROM tearsheets t
+        LEFT JOIN users u ON t.created_by = u.id
+        LEFT JOIN tearsheet_job_seekers tjs ON t.id = tjs.tearsheet_id
+        LEFT JOIN tearsheet_hiring_managers thm ON t.id = thm.tearsheet_id
+        LEFT JOIN tearsheet_jobs tj ON t.id = tj.tearsheet_id
+        LEFT JOIN tearsheet_leads tl ON t.id = tl.tearsheet_id
+        WHERE t.id = $1
+        GROUP BY t.id, t.name, t.visibility, t.created_at, t.updated_at, u.name, u.id
+      `, [id]);
+      return result.rows[0] || null;
+    } finally {
+      client.release();
+    }
+  }
+
   async getRecordsByType(tearsheetId, type) {
     const client = await this.pool.connect();
     try {
@@ -201,9 +246,10 @@ class Tearsheet {
           break;
         case 'hiring_managers':
           query = `
-            SELECT hm.id, CONCAT_WS(' ', hm.first_name, hm.last_name) as name, hm.email
+            SELECT hm.id, CONCAT_WS(' ', hm.first_name, hm.last_name) as name, hm.email, o.name as organization
             FROM tearsheet_hiring_managers thm
             JOIN hiring_managers hm ON thm.hiring_manager_id = hm.id
+            LEFT JOIN organizations o ON hm.organization_id = o.id
             WHERE thm.tearsheet_id = $1
             ORDER BY hm.first_name, hm.last_name
           `;
