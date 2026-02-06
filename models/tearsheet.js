@@ -165,6 +165,10 @@ class Tearsheet {
           COUNT(DISTINCT tj.job_id) as job_order_count,
           COUNT(DISTINCT tl.lead_id) as lead_count,
           (SELECT COUNT(DISTINCT org_id) FROM (
+            SELECT organization_id AS org_id
+            FROM tearsheet_organizations
+            WHERE tearsheet_id = t.id
+            UNION
             SELECT hm.organization_id AS org_id
             FROM tearsheet_hiring_managers thm2
             JOIN hiring_managers hm ON thm2.hiring_manager_id = hm.id
@@ -210,6 +214,10 @@ class Tearsheet {
           COUNT(DISTINCT tj.job_id) as job_order_count,
           COUNT(DISTINCT tl.lead_id) as lead_count,
           (SELECT COUNT(DISTINCT org_id) FROM (
+            SELECT organization_id AS org_id
+            FROM tearsheet_organizations
+            WHERE tearsheet_id = t.id
+            UNION
             SELECT hm.organization_id AS org_id
             FROM tearsheet_hiring_managers thm2
             JOIN hiring_managers hm ON thm2.hiring_manager_id = hm.id
