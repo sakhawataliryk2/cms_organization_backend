@@ -1,5 +1,5 @@
 // jobs/archiveCleanup.js
-// This job runs daily to clean up archived organizations after 7 days
+// This job runs daily to clean up archived organizations and hiring managers after 7 days
 
 const Organization = require("../models/organization");
 const Transfer = require("../models/transfer");
@@ -10,8 +10,7 @@ async function runArchiveCleanup(pool) {
   try {
     await client.query("BEGIN");
 
-    // Find organizations that were archived 7+ days ago
-    // This includes both transfer-approved and delete-approved archives
+    // ---------- Organizations ----------
     const archivedOrgsResult = await client.query(
       `
       SELECT DISTINCT o.id, o.name
@@ -33,44 +32,26 @@ async function runArchiveCleanup(pool) {
     for (const org of archivedOrgs) {
       console.log(`Cleaning up archived organization: ${org.name} (ID: ${org.id})`);
 
-      // Get the record number before deletion (for potential reuse)
-      const recordNumber = org.id;
-
-      // Delete all related data
-      // 1. Delete hiring managers
       await client.query(
         "DELETE FROM hiring_managers WHERE organization_id = $1",
         [org.id]
       );
-
-      // 2. Delete jobs
       await client.query("DELETE FROM jobs WHERE organization_id = $1", [org.id]);
-
-      // 3. Delete leads
       await client.query("DELETE FROM leads WHERE organization_id = $1", [org.id]);
-
-      // 4. Delete notes
       await client.query(
         "DELETE FROM organization_notes WHERE organization_id = $1",
         [org.id]
       );
-
-      // 5. Delete history
       await client.query(
         "DELETE FROM organization_history WHERE organization_id = $1",
         [org.id]
       );
-
-      // 6. Delete documents
       await client.query(
         "DELETE FROM organization_documents WHERE organization_id = $1",
         [org.id]
       );
-
-      // 7. Delete the organization record
       await client.query("DELETE FROM organizations WHERE id = $1", [org.id]);
 
-      // 8. Mark cleanup task as completed
       await client.query(
         `
         UPDATE scheduled_tasks
@@ -84,8 +65,54 @@ async function runArchiveCleanup(pool) {
       console.log(`Successfully cleaned up organization ${org.id}`);
     }
 
+    // ---------- Hiring Managers ----------
+    const archivedHmResult = await client.query(
+      `
+      SELECT hm.id, hm.first_name, hm.last_name
+      FROM hiring_managers hm
+      WHERE hm.status = 'Archived'
+        AND hm.archived_at IS NOT NULL
+        AND hm.archived_at <= CURRENT_TIMESTAMP - INTERVAL '7 days'
+      `
+    );
+
+    const archivedHms = archivedHmResult.rows;
+
+    for (const hm of archivedHms) {
+      const hmName = `${hm.last_name || ""}, ${hm.first_name || ""}`.trim() || `ID ${hm.id}`;
+      console.log(`Cleaning up archived hiring manager: ${hmName} (ID: ${hm.id})`);
+
+      await client.query(
+        "DELETE FROM hiring_manager_notes WHERE hiring_manager_id = $1",
+        [hm.id]
+      );
+      await client.query(
+        "DELETE FROM hiring_manager_history WHERE hiring_manager_id = $1",
+        [hm.id]
+      );
+      await client.query(
+        "DELETE FROM documents WHERE entity_type = 'hiring_manager' AND entity_id = $1",
+        [hm.id]
+      );
+      await client.query("DELETE FROM hiring_managers WHERE id = $1", [hm.id]);
+
+      await client.query(
+        `
+        UPDATE scheduled_tasks
+        SET status = 'completed', completed_at = CURRENT_TIMESTAMP
+        WHERE task_type = 'archive_cleanup' 
+          AND task_data->>'hiring_manager_id' = $1
+      `,
+        [hm.id.toString()]
+      );
+
+      console.log(`Successfully cleaned up hiring manager ${hm.id}`);
+    }
+
     await client.query("COMMIT");
-    console.log(`Archive cleanup completed. Processed ${archivedOrgs.rows.length} organizations.`);
+    console.log(
+      `Archive cleanup completed. Processed ${archivedOrgs.length} organizations, ${archivedHms.length} hiring managers.`
+    );
   } catch (error) {
     await client.query("ROLLBACK");
     console.error("Error running archive cleanup:", error);

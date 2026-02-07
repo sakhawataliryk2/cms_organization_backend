@@ -5,8 +5,8 @@ const EmailTemplateModel = require("../models/emailTemplateModel");
 const { renderTemplate } = require("../utils/templateRenderer");
 const { sendMail } = require("../services/emailService");
 
-const PAYROLL_EMAIL = process.env.PAYROLL_EMAIL || "payroll@completestaffingsolutions.com";
-// const PAYROLL_EMAIL = "yasirrehman274@gmail.com";
+// const PAYROLL_EMAIL = process.env.PAYROLL_EMAIL || "payroll@completestaffingsolutions.com";
+const PAYROLL_EMAIL = "yasirrehman274@gmail.com";
 
 class DeleteRequestController {
   constructor(pool) {
@@ -380,12 +380,13 @@ class DeleteRequestController {
       await client.query("BEGIN");
 
       if (deleteRequest.record_type === "organization") {
-        // Update organization status to "Archived"
+        // Update organization status to "Archived" and set archive_reason for Deletion
         await client.query(
           `
           UPDATE organizations
           SET status = 'Archived',
               archived_at = CURRENT_TIMESTAMP,
+              archive_reason = 'Deletion',
               updated_at = CURRENT_TIMESTAMP
           WHERE id = $1
         `,
@@ -418,12 +419,13 @@ class DeleteRequestController {
           ]
         );
       } else if (deleteRequest.record_type === "hiring_manager") {
-        // Update hiring manager status to "Archived"
+        // Update hiring manager status to "Archived" and set archive_reason for Deletion
         await client.query(
           `
           UPDATE hiring_managers
           SET status = 'Archived',
               archived_at = CURRENT_TIMESTAMP,
+              archive_reason = 'Deletion',
               updated_at = CURRENT_TIMESTAMP
           WHERE id = $1
         `,

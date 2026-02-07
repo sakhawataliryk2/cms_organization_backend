@@ -474,9 +474,9 @@ class TransferController {
         [targetOrgId, sourceOrgId]
       );
 
-      // 7. Change source organization status to "Archived" and set archived_at timestamp
+      // 7. Change source organization status to "Archived", set archived_at and archive_reason for Transfer
       await client.query(
-        "UPDATE organizations SET status = 'Archived', archived_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
+        "UPDATE organizations SET status = 'Archived', archived_at = CURRENT_TIMESTAMP, archive_reason = 'Transfer', updated_at = CURRENT_TIMESTAMP WHERE id = $1",
         [sourceOrgId]
       );
 

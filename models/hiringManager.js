@@ -85,6 +85,19 @@ class HiringManager {
                 END $$;
             `);
 
+            // Add archive_reason column (Deletion | Transfer) if it doesn't exist
+            await client.query(`
+                DO $$ 
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns 
+                        WHERE table_name='hiring_managers' AND column_name='archive_reason'
+                    ) THEN
+                        ALTER TABLE hiring_managers ADD COLUMN archive_reason VARCHAR(50);
+                    END IF;
+                END $$;
+            `);
+
             // Add new address-related columns if they don't exist (for existing tables)
             await client.query(`
                 DO $$ 

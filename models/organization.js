@@ -65,6 +65,19 @@ class Organization {
                 END $$;
             `);
 
+            // Add archive_reason column (Deletion | Transfer) if it doesn't exist
+            await client.query(`
+                DO $$ 
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns 
+                        WHERE table_name='organizations' AND column_name='archive_reason'
+                    ) THEN
+                        ALTER TABLE organizations ADD COLUMN archive_reason VARCHAR(50);
+                    END IF;
+                END $$;
+            `);
+
             // Also create a table for organization notes if it doesn't exist
             await client.query(`
                 CREATE TABLE IF NOT EXISTS organization_notes (
