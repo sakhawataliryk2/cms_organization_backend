@@ -114,7 +114,6 @@ const additionalOrigins = process.env.ALLOWED_ORIGINS
 
 const allOrigins = [...allowedOrigins, ...additionalOrigins];
 
-// CORS configuration with error handling
 try {
   app.use(
     cors({
