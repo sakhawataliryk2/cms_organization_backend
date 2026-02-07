@@ -1,6 +1,7 @@
 const DeleteRequest = require("../models/deleteRequest");
 const Organization = require("../models/organization");
 const HiringManager = require("../models/hiringManager");
+const JobSeeker = require("../models/jobseeker");
 const EmailTemplateModel = require("../models/emailTemplateModel");
 const { renderTemplate } = require("../utils/templateRenderer");
 const { sendMail } = require("../services/emailService");
@@ -14,6 +15,7 @@ class DeleteRequestController {
     this.deleteRequestModel = new DeleteRequest(pool);
     this.organizationModel = new Organization(pool);
     this.hiringManagerModel = new HiringManager(pool);
+    this.jobSeekerModel = new JobSeeker(pool);
     this.emailTemplateModel = new EmailTemplateModel(pool);
     this.create = this.create.bind(this);
     this.approve = this.approve.bind(this);
@@ -109,14 +111,18 @@ class DeleteRequestController {
     let recordPath = "organizations";
     if (deleteRequest.record_type === "hiring_manager") {
       recordPath = "hiring-managers";
+    } else if (deleteRequest.record_type === "job_seeker") {
+      recordPath = "job-seekers";
     }
     const approvalUrl = `${baseUrl}/dashboard/${recordPath}/delete/${deleteRequest.id}/approve`;
     const denyUrl = `${baseUrl}/dashboard/${recordPath}/delete/${deleteRequest.id}/deny`;
 
-    const templateType =
-      deleteRequest.record_type === "hiring_manager"
-        ? "HIRING_MANAGER_DELETE_REQUEST"
-        : "ORGANIZATION_DELETE_REQUEST";
+    let templateType = "ORGANIZATION_DELETE_REQUEST";
+    if (deleteRequest.record_type === "hiring_manager") {
+      templateType = "HIRING_MANAGER_DELETE_REQUEST";
+    } else if (deleteRequest.record_type === "job_seeker") {
+      templateType = "JOB_SEEKER_DELETE_REQUEST";
+    }
     const tpl = await this.emailTemplateModel.getTemplateByType(templateType);
 
     const requestDate = new Date(deleteRequest.created_at).toLocaleString();
@@ -311,6 +317,12 @@ class DeleteRequestController {
             `Delete denied: ${denial_reason.trim()}`,
             userId
           );
+        } else if (deniedRequest.record_type === "job_seeker") {
+          await this.jobSeekerModel.addNote(
+            deniedRequest.record_id,
+            `Delete denied: ${denial_reason.trim()}`,
+            userId
+          );
         }
       } catch (noteError) {
         console.error("Error adding denial note:", noteError);
@@ -453,6 +465,42 @@ class DeleteRequestController {
             "archive_cleanup",
             JSON.stringify({
               hiring_manager_id: deleteRequest.record_id,
+              delete_request_id: deleteRequest.id,
+            }),
+          ]
+        );
+      } else if (deleteRequest.record_type === "job_seeker") {
+        await client.query(
+          `
+          UPDATE job_seekers
+          SET status = 'Archived',
+              archived_at = CURRENT_TIMESTAMP,
+              archive_reason = 'Deletion',
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = $1
+        `,
+          [deleteRequest.record_id]
+        );
+
+        await this.jobSeekerModel.addNote(
+          deleteRequest.record_id,
+          "Record archived following payroll approval",
+          deleteRequest.reviewed_by
+        );
+
+        await client.query(
+          `
+          INSERT INTO scheduled_tasks (
+            task_type,
+            task_data,
+            scheduled_for,
+            status
+          ) VALUES ($1, $2::jsonb, CURRENT_TIMESTAMP + INTERVAL '7 days', 'pending')
+        `,
+          [
+            "archive_cleanup",
+            JSON.stringify({
+              job_seeker_id: deleteRequest.record_id,
               delete_request_id: deleteRequest.id,
             }),
           ]

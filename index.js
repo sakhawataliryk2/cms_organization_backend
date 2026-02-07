@@ -37,6 +37,7 @@ const TearsheetController = require("./controllers/tearsheetController");
 const AdminDocumentController = require("./controllers/adminDocumentController");
 const TransferController = require("./controllers/transferController");
 const HiringManagerTransferController = require("./controllers/hiringManagerTransferController");
+const JobSeekerTransferController = require("./controllers/jobSeekerTransferController");
 const DeleteRequestController = require("./controllers/deleteRequestController");
 const SharedDocumentController = require("./controllers/sharedDocumentController");
 const BroadcastMessageController = require("./controllers/broadcastMessageController");
@@ -55,6 +56,7 @@ const createJobRouter = require("./routes/jobRoutes");
 const createJobSeekerRouter = require("./routes/jobSeekerRoutes");
 const createHiringManagerRouter = require("./routes/hiringManagerRoutes");
 const createHiringManagerTransferRouter = require("./routes/hiringManagerTransferRoutes");
+const createJobSeekerTransferRouter = require("./routes/jobSeekerTransferRoutes");
 const createCustomFieldRouter = require("./routes/customFieldRoutes");
 const createUserRouter = require("./routes/userRoutes");
 const createLeadRouter = require("./routes/leadRoutes");
@@ -189,6 +191,10 @@ const getTransferController = () => {
 };
 const getHiringManagerTransferController = () => {
   return new HiringManagerTransferController(getPool());
+};
+
+const getJobSeekerTransferController = () => {
+  return new JobSeekerTransferController(getPool());
 };
 
 const getDeleteRequestController = () => {
@@ -363,6 +369,12 @@ app.use(async (req, res, next) => {
         const hmTransferModel = new HiringManagerTransfer(getPool());
         await hmTransferModel.initTable();
       }
+      // Initialize job seeker transfer table
+      if (req.path.startsWith("/api/job-seekers/transfer")) {
+        const JobSeekerTransfer = require("./models/jobSeekerTransfer");
+        const jsTransferModel = new JobSeekerTransfer(getPool());
+        await jsTransferModel.initTable();
+      }
 
       // Initialize delete request tables
       if (req.path.includes("/delete-request") || req.path.match(/\/delete\/\d+\/(approve|deny)/)) {
@@ -460,6 +472,7 @@ const applyDeleteRequestRoutes = (basePath) => {
 
 applyDeleteRequestRoutes("/api/organizations");
 applyDeleteRequestRoutes("/api/hiring-managers");
+applyDeleteRequestRoutes("/api/job-seekers");
 
 // Setup organization routes with authentication
 app.use("/api/organizations", sanitizeInputs, (req, res, next) => {
@@ -495,6 +508,16 @@ app.use("/api/hiring-managers/transfer", sanitizeInputs, (req, res, next) => {
 app.use("/api/jobs", sanitizeInputs, (req, res, next) => {
   const authMiddleware = { verifyToken: verifyToken(getPool()), checkRole };
   const router = createJobRouter(getJobController(), authMiddleware);
+  router(req, res, next);
+});
+
+// Job seeker transfer routes (must be before /api/job-seekers so /transfer is matched)
+app.use("/api/job-seekers/transfer", sanitizeInputs, (req, res, next) => {
+  const authMiddleware = { verifyToken: verifyToken(getPool()), checkRole };
+  const router = createJobSeekerTransferRouter(
+    getJobSeekerTransferController(),
+    authMiddleware
+  );
   router(req, res, next);
 });
 

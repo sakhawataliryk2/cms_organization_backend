@@ -410,10 +410,14 @@ class JobSeekerController {
 
 
       // Only admin/owner can see all job seekers, other users only see their own
+      // archived=true query param returns only archived job seekers (for archived page)
+      const archivedOnly = req.query.archived === "true";
 
       const jobSeekers = await this.jobSeekerModel.getAll(
 
-        ["admin", "owner"].includes(userRole) ? null : userId
+        ["admin", "owner"].includes(userRole) ? null : userId,
+
+        archivedOnly
 
       );
 

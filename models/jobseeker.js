@@ -36,8 +36,16 @@ class JobSeeker {
                     created_by INTEGER REFERENCES users(id),
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    custom_fields JSONB
+                    custom_fields JSONB,
+                    archived_at TIMESTAMP,
+                    archive_reason VARCHAR(50)
                 )
+            `);
+            await client.query(`
+                ALTER TABLE job_seekers ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP
+            `);
+            await client.query(`
+                ALTER TABLE job_seekers ADD COLUMN IF NOT EXISTS archive_reason VARCHAR(50)
             `);
 
             // Also create a table for job seeker notes if it doesn't exist
@@ -239,8 +247,9 @@ class JobSeeker {
         }
     }
 
-    // Get all job seekers (with optional filtering by created_by user)
-    async getAll(userId = null) {
+    // Get all job seekers (with optional filtering by created_by user and archived state)
+    // archivedOnly: true = only archived, false/undefined = exclude archived (default)
+    async getAll(userId = null, archivedOnly = false) {
         const client = await this.pool.connect();
         try {
             let query = `
@@ -251,12 +260,25 @@ class JobSeeker {
                 LEFT JOIN users u ON js.created_by = u.id
             `;
 
+            const conditions = [];
             const values = [];
+            let paramCount = 1;
 
-            // If userId is provided, filter jobs by the user that created them
             if (userId) {
-                query += ` WHERE js.created_by = $1`;
+                conditions.push(`js.created_by = $${paramCount}`);
                 values.push(userId);
+                paramCount++;
+            }
+
+            if (archivedOnly) {
+                conditions.push(`(js.status = 'Archived' OR js.archived_at IS NOT NULL)`);
+            } else {
+                conditions.push(`(js.status IS NULL OR js.status != 'Archived')`);
+                conditions.push(`js.archived_at IS NULL`);
+            }
+
+            if (conditions.length > 0) {
+                query += ` WHERE ` + conditions.join(" AND ");
             }
 
             query += ` ORDER BY js.created_at DESC`;

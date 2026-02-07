@@ -109,9 +109,53 @@ async function runArchiveCleanup(pool) {
       console.log(`Successfully cleaned up hiring manager ${hm.id}`);
     }
 
+    // ---------- Job Seekers ----------
+    const archivedJsResult = await client.query(
+      `
+      SELECT js.id, js.first_name, js.last_name
+      FROM job_seekers js
+      WHERE js.status = 'Archived'
+        AND js.archived_at IS NOT NULL
+        AND js.archived_at <= CURRENT_TIMESTAMP - INTERVAL '7 days'
+      `
+    );
+
+    const archivedJs = archivedJsResult.rows;
+
+    for (const js of archivedJs) {
+      const jsName = `${js.last_name || ""}, ${js.first_name || ""}`.trim() || `ID ${js.id}`;
+      console.log(`Cleaning up archived job seeker: ${jsName} (ID: ${js.id})`);
+
+      await client.query(
+        "DELETE FROM job_seeker_notes WHERE job_seeker_id = $1",
+        [js.id]
+      );
+      await client.query(
+        "DELETE FROM job_seeker_history WHERE job_seeker_id = $1",
+        [js.id]
+      );
+      await client.query(
+        "DELETE FROM documents WHERE entity_type = 'job_seeker' AND entity_id = $1",
+        [js.id]
+      );
+      await client.query("DELETE FROM job_seekers WHERE id = $1", [js.id]);
+
+      await client.query(
+        `
+        UPDATE scheduled_tasks
+        SET status = 'completed', completed_at = CURRENT_TIMESTAMP
+        WHERE task_type = 'archive_cleanup'
+          AND task_data->>'job_seeker_id' = $1
+      `,
+        [js.id.toString()]
+      );
+
+      console.log(`Successfully cleaned up job seeker ${js.id}`);
+    }
+
     await client.query("COMMIT");
     console.log(
-      `Archive cleanup completed. Processed ${archivedOrgs.length} organizations, ${archivedHms.length} hiring managers.`
+      `Archive cleanup completed. Processed ${archivedOrgs.length} organizations, ${archivedHms.length} hiring managers, ${archivedJs.length} job seekers.`
     );
   } catch (error) {
     await client.query("ROLLBACK");
