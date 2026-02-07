@@ -61,7 +61,7 @@ class CustomFieldController {
             }
 
             // Validate field type
-            const validFieldTypes = ['text', 'email', 'phone', 'number', 'currency', 'percentage', 'date', 'datetime', 'textarea', 'select', 'checkbox', 'radio', 'url', 'file', 'lookup', 'multiselect', 'multicheckbox', 'composite', 'link'];
+            const validFieldTypes = ['text', 'email', 'phone', 'number', 'currency', 'percentage', 'date', 'datetime', 'textarea', 'select', 'checkbox', 'radio', 'url', 'file', 'lookup', 'multiselect_lookup', 'multiselect', 'multicheckbox', 'composite', 'link'];
             console.log('Validating field type:', fieldType, 'against valid types:', validFieldTypes);
             if (fieldType && !validFieldTypes.includes(fieldType)) {
                 console.error('Field type validation failed:', fieldType, 'not in', validFieldTypes);
@@ -244,7 +244,7 @@ class CustomFieldController {
             }
 
             // 5. Validate field type if it's being updated
-            const validFieldTypes = ['text', 'email', 'phone', 'number', 'currency', 'percentage', 'date', 'datetime', 'textarea', 'select', 'checkbox', 'radio', 'url', 'file', 'lookup', 'multiselect', 'multicheckbox', 'composite', 'link'];
+            const validFieldTypes = ['text', 'email', 'phone', 'number', 'currency', 'percentage', 'date', 'datetime', 'textarea', 'select', 'checkbox', 'radio', 'url', 'file', 'lookup', 'multiselect_lookup', 'multiselect', 'multicheckbox', 'composite', 'link'];
             if (updateData.fieldType !== undefined) {
                 console.log('Validating field type update:', updateData.fieldType, 'against valid types:', validFieldTypes);
                 if (!validFieldTypes.includes(updateData.fieldType)) {
