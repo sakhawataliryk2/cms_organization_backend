@@ -155,10 +155,7 @@ class LeadController {
 
             console.log(`User ID: ${userId}, User Role: ${userRole}`);
 
-            // Only admin/owner can see all leads, other users only see their own
-            const leads = await this.leadModel.getAll(
-                ['admin', 'owner'].includes(userRole) ? null : userId
-            );
+            const leads = await this.leadModel.getAll(null);
 
             console.log(`Found ${leads.length} leads`);
 
@@ -197,11 +194,7 @@ class LeadController {
 
             console.log(`User ID: ${userId}, User Role: ${userRole}`);
 
-            // Only admin/owner can see any lead, other users only see their own
-            const lead = await this.leadModel.getById(
-                id,
-                ['admin', 'owner'].includes(userRole) ? null : userId
-            );
+            const lead = await this.leadModel.getById(id, null);
 
             if (!lead) {
                 return res.status(404).json({
@@ -294,16 +287,7 @@ class LeadController {
 
             console.log(`User role: ${userRole}, User ID: ${userId}`);
 
-            // For admin/owner roles, allow updating any lead
-            // For other roles, they can only update their own leads
-            const leadOwner = ['admin', 'owner'].includes(userRole) ? null : userId;
-
-            // Try to update the lead
-            const lead = await this.leadModel.update(
-                id,
-                updateData,
-                leadOwner
-            );
+            const lead = await this.leadModel.update(id, updateData, null);
 
             if (!lead) {
                 console.log("Update failed - lead not found or no permission");
@@ -373,14 +357,7 @@ class LeadController {
 
             console.log(`User role: ${userRole}, User ID: ${userId}`);
 
-            // Only admin/owner can delete any lead, others only their own
-            const leadOwner = ['admin', 'owner'].includes(userRole) ? null : userId;
-
-            // Delete the lead
-            const lead = await this.leadModel.delete(
-                id,
-                leadOwner
-            );
+            const lead = await this.leadModel.delete(id, null);
 
             if (!lead) {
                 console.log("Delete failed - lead not found or no permission");
@@ -566,11 +543,7 @@ class LeadController {
             const userId = req.user.id;
             const userRole = req.user.role;
 
-            // Get leads for this organization
-            const leads = await this.leadModel.getByOrganization(
-                organizationId,
-                ['admin', 'owner'].includes(userRole) ? null : userId
-            );
+            const leads = await this.leadModel.getByOrganization(organizationId, null);
 
             console.log(`Found ${leads.length} leads for organization ${organizationId}`);
 
@@ -607,11 +580,7 @@ class LeadController {
             const userId = req.user.id;
             const userRole = req.user.role;
 
-            // Search leads
-            const leads = await this.leadModel.search(
-                query.trim(),
-                ['admin', 'owner'].includes(userRole) ? null : userId
-            );
+            const leads = await this.leadModel.search(query.trim(), null);
 
             console.log(`Found ${leads.length} leads matching query: ${query}`);
 
@@ -640,10 +609,7 @@ class LeadController {
             const userId = req.user.id;
             const userRole = req.user.role;
 
-            // Get statistics
-            const stats = await this.leadModel.getStats(
-                ['admin', 'owner'].includes(userRole) ? null : userId
-            );
+            const stats = await this.leadModel.getStats(null);
 
             console.log('Successfully retrieved lead statistics');
 

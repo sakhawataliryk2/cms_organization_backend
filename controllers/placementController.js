@@ -124,10 +124,8 @@ class PlacementController {
             const userId = req.user.id;
             const userRole = req.user.role;
 
-            // Only admin/owner can see all placements, other users only see their own
-            const placements = await this.placementModel.getAll(
-                ['admin', 'owner', 'developer'].includes(userRole) ? null : userId
-            );
+            // All users can see all placements
+            const placements = await this.placementModel.getAll(null);
 
             res.status(200).json({
                 success: true,
@@ -160,14 +158,6 @@ class PlacementController {
                 });
             }
 
-            // Check if user has permission to view this placement
-            if (!['admin', 'owner', 'developer'].includes(userRole) && placement.createdBy !== userId) {
-                return res.status(403).json({
-                    success: false,
-                    message: 'You do not have permission to view this placement'
-                });
-            }
-
             res.status(200).json({
                 success: true,
                 placement
@@ -196,7 +186,7 @@ class PlacementController {
             const userRole = req.user.role;
             const placements = await this.placementModel.findByOrganizationId(
                 organizationId,
-                ['admin', 'owner', 'developer'].includes(userRole) ? null : userId
+                null
             );
             res.status(200).json({
                 success: true,
@@ -222,16 +212,10 @@ class PlacementController {
 
             const placements = await this.placementModel.findByJobId(jobId);
 
-            // Filter placements based on user role
-            let filteredPlacements = placements;
-            if (!['admin', 'owner', 'developer'].includes(userRole)) {
-                filteredPlacements = placements.filter(p => p.createdBy === userId);
-            }
-
             res.status(200).json({
                 success: true,
-                count: filteredPlacements.length,
-                placements: filteredPlacements
+                count: placements.length,
+                placements
             });
         } catch (error) {
             console.error('Error getting placements by job ID:', error);
@@ -252,16 +236,10 @@ class PlacementController {
 
             const placements = await this.placementModel.findByJobSeekerId(jobSeekerId);
 
-            // Filter placements based on user role
-            let filteredPlacements = placements;
-            if (!['admin', 'owner', 'developer'].includes(userRole)) {
-                filteredPlacements = placements.filter(p => p.createdBy === userId);
-            }
-
             res.status(200).json({
                 success: true,
-                count: filteredPlacements.length,
-                placements: filteredPlacements
+                count: placements.length,
+                placements
             });
         } catch (error) {
             console.error('Error getting placements by job seeker ID:', error);
@@ -290,14 +268,6 @@ class PlacementController {
                 return res.status(404).json({
                     success: false,
                     message: 'Placement not found'
-                });
-            }
-
-            // Check if user has permission to update this placement
-            if (!['admin', 'owner', 'developer'].includes(userRole) && existingPlacement.createdBy !== userId) {
-                return res.status(403).json({
-                    success: false,
-                    message: 'You do not have permission to update this placement'
                 });
             }
 
@@ -373,13 +343,6 @@ class PlacementController {
                 });
             }
 
-            if (!['admin', 'owner', 'developer'].includes(userRole) && placement.createdBy !== userId) {
-                return res.status(403).json({
-                    success: false,
-                    message: 'You do not have permission to view this placement'
-                });
-            }
-
             const history = await this.placementModel.getHistory(id);
 
             res.status(200).json({
@@ -427,13 +390,6 @@ class PlacementController {
                     message: 'Placement not found'
                 });
             }
-            if (!['admin', 'owner', 'developer'].includes(userRole) && placement.createdBy !== userId) {
-                return res.status(403).json({
-                    success: false,
-                    message: 'You do not have permission to add notes to this placement'
-                });
-            }
-
             const finalAboutReferences = about_references || aboutReferences;
             const note = await this.placementModel.addNote(id, text, userId, action, finalAboutReferences);
 
@@ -515,13 +471,6 @@ class PlacementController {
                     message: 'Placement not found'
                 });
             }
-            if (!['admin', 'owner', 'developer'].includes(userRole) && placement.createdBy !== userId) {
-                return res.status(403).json({
-                    success: false,
-                    message: 'You do not have permission to view notes for this placement'
-                });
-            }
-
             const notes = await this.placementModel.getNotes(id);
 
             return res.status(200).json({
@@ -553,14 +502,6 @@ class PlacementController {
                 return res.status(404).json({
                     success: false,
                     message: 'Placement not found'
-                });
-            }
-
-            // Check if user has permission to delete this placement
-            if (!['admin', 'owner', 'developer'].includes(userRole) && existingPlacement.createdBy !== userId) {
-                return res.status(403).json({
-                    success: false,
-                    message: 'You do not have permission to delete this placement'
                 });
             }
 

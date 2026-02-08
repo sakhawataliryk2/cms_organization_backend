@@ -63,15 +63,12 @@ class JobSeekerController {
       const userId = req.user.id;
       const userRole = req.user.role;
 
-      const jobSeekerOwner = ["admin", "owner"].includes(userRole) ? null : userId;
-
-      const jobSeeker = await this.jobSeekerModel.getById(id, jobSeekerOwner);
+      const jobSeeker = await this.jobSeekerModel.getById(id, null);
 
       if (!jobSeeker) {
         return res.status(404).json({
           success: false,
-          message:
-            "Job seeker not found or you do not have permission to view it",
+          message: "Job seeker not found",
         });
       }
 
@@ -104,9 +101,6 @@ class JobSeekerController {
       const { id } = req.params;
 
       const userId = req.user.id;
-      const userRole = req.user.role;
-
-      const jobSeekerOwner = ["admin", "owner"].includes(userRole) ? null : userId;
 
       const application = req.body || {};
 
@@ -124,13 +118,12 @@ class JobSeekerController {
         });
       }
 
-      const jobSeeker = await this.jobSeekerModel.getById(id, jobSeekerOwner);
+      const jobSeeker = await this.jobSeekerModel.getById(id, null);
 
       if (!jobSeeker) {
         return res.status(404).json({
           success: false,
-          message:
-            "Job seeker not found or you do not have permission to update it",
+          message: "Job seeker not found",
         });
       }
 
@@ -165,7 +158,7 @@ class JobSeekerController {
       await this.jobSeekerModel.update(
         id,
         { custom_fields: { ...customFields, applications: updatedApplications } },
-        jobSeekerOwner
+        null
       );
 
       return res.status(201).json({
@@ -409,17 +402,10 @@ class JobSeekerController {
 
 
 
-      // Only admin/owner can see all job seekers, other users only see their own
       // archived=true query param returns only archived job seekers (for archived page)
       const archivedOnly = req.query.archived === "true";
 
-      const jobSeekers = await this.jobSeekerModel.getAll(
-
-        ["admin", "owner"].includes(userRole) ? null : userId,
-
-        archivedOnly
-
-      );
+      const jobSeekers = await this.jobSeekerModel.getAll(null, archivedOnly);
 
 
 
@@ -473,17 +459,7 @@ class JobSeekerController {
 
 
 
-      // Only admin/owner can see any job seeker, other users only see their own
-
-      const jobSeeker = await this.jobSeekerModel.getById(
-
-        id,
-
-        ["admin", "owner"].includes(userRole) ? null : userId
-
-      );
-
-
+      const jobSeeker = await this.jobSeekerModel.getById(id, null);
 
       if (!jobSeeker) {
 
@@ -491,9 +467,7 @@ class JobSeekerController {
 
           success: false,
 
-          message:
-
-            "Job seeker not found or you do not have permission to view it",
+          message: "Job seeker not found",
 
         });
 
@@ -563,29 +537,7 @@ class JobSeekerController {
 
 
 
-      // For admin/owner roles, allow updating any job seeker
-
-      // For other roles, they can only update their own job seekers
-
-      const jobSeekerOwner = ["admin", "owner"].includes(userRole)
-
-        ? null
-
-        : userId;
-
-
-
-      // Try to update the job seeker
-
-      const jobSeeker = await this.jobSeekerModel.update(
-
-        id,
-
-        updateData,
-
-        jobSeekerOwner
-
-      );
+      const jobSeeker = await this.jobSeekerModel.update(id, updateData, null);
 
 
 
@@ -691,19 +643,7 @@ class JobSeekerController {
 
 
 
-      // Only admin/owner can delete any job seeker, others only their own
-
-      const jobSeekerOwner = ["admin", "owner"].includes(userRole)
-
-        ? null
-
-        : userId;
-
-
-
-      // Delete the job seeker
-
-      const jobSeeker = await this.jobSeekerModel.delete(id, jobSeekerOwner);
+      const jobSeeker = await this.jobSeekerModel.delete(id, null);
 
 
 
@@ -1344,13 +1284,7 @@ class JobSeekerController {
 
       const userRole = req.user.role;
 
-      const jobSeeker = await this.jobSeekerModel.getById(
-
-        id,
-
-        ["admin", "owner"].includes(userRole) ? null : userId
-
-      );
+      const jobSeeker = await this.jobSeekerModel.getById(id, null);
 
       if (!jobSeeker) {
 
@@ -1358,9 +1292,7 @@ class JobSeekerController {
 
           success: false,
 
-          message:
-
-            "Job seeker not found or you do not have permission to view it",
+          message: "Job seeker not found",
 
         });
 
@@ -1410,17 +1342,9 @@ class JobSeekerController {
 
       const userId = req.user.id;
 
-      const userRole = req.user.role;
-
-      const jobSeekerOwner = ["admin", "owner"].includes(userRole)
-
-        ? null
-
-        : userId;
-
       const reference = req.body || {};
 
-      const jobSeeker = await this.jobSeekerModel.getById(id, jobSeekerOwner);
+      const jobSeeker = await this.jobSeekerModel.getById(id, null);
 
       if (!jobSeeker) {
 
@@ -1428,9 +1352,7 @@ class JobSeekerController {
 
           success: false,
 
-          message:
-
-            "Job seeker not found or you do not have permission to update it",
+          message: "Job seeker not found",
 
         });
 
@@ -1484,7 +1406,7 @@ class JobSeekerController {
 
         { custom_fields: { ...customFields, references: updatedReferences } },
 
-        jobSeekerOwner
+        null
 
       );
 
@@ -1526,15 +1448,7 @@ class JobSeekerController {
 
       const userId = req.user.id;
 
-      const userRole = req.user.role;
-
-      const jobSeekerOwner = ["admin", "owner"].includes(userRole)
-
-        ? null
-
-        : userId;
-
-      const jobSeeker = await this.jobSeekerModel.getById(id, jobSeekerOwner);
+      const jobSeeker = await this.jobSeekerModel.getById(id, null);
 
       if (!jobSeeker) {
 
@@ -1542,9 +1456,7 @@ class JobSeekerController {
 
           success: false,
 
-          message:
-
-            "Job seeker not found or you do not have permission to update it",
+          message: "Job seeker not found",
 
         });
 
@@ -1576,7 +1488,7 @@ class JobSeekerController {
 
         { custom_fields: { ...customFields, references: updatedReferences } },
 
-        jobSeekerOwner
+        null
 
       );
 

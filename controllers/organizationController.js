@@ -69,18 +69,6 @@ class OrganizationController {
             users
         } = req.body;
 
-        // Debug log all received fields
-        console.log("=== CREATE ORGANIZATION REQUEST ===");
-        console.log("Full request body:", JSON.stringify(req.body, null, 2));
-        console.log("custom_fields in req.body:", req.body.custom_fields);
-        console.log("custom_fields type:", typeof req.body.custom_fields);
-        console.log("custom_fields is array:", Array.isArray(req.body.custom_fields));
-        console.log("custom_fields keys:", req.body.custom_fields ? Object.keys(req.body.custom_fields).length : 'null/undefined');
-        console.log("Extracted custom_fields:", custom_fields);
-        console.log("Extracted custom_fields type:", typeof custom_fields);
-        console.log("Extracted custom_fields keys:", custom_fields ? Object.keys(custom_fields).length : 'null/undefined');
-        console.log("=== END CREATE REQUEST ===");
-
         // Basic validation - only name is required
         if (!name || !name.trim()) {
             return res.status(400).json({
@@ -113,7 +101,6 @@ class OrganizationController {
             if (!customFieldsObj["Owner"] || (typeof customFieldsObj["Owner"] === 'string' && customFieldsObj["Owner"].trim() === "")) {
                 if (userName) {
                     customFieldsObj["Owner"] = userName;
-                    console.log("Auto-populated Owner field with authenticated user:", userName);
                 }
             }
 
@@ -138,19 +125,8 @@ class OrganizationController {
                 userId,
                 custom_fields: customFieldsObj, // FIXED: Use snake_case to match model expectation
             };
-            console.log("=== PASSING TO MODEL ===");
-            console.log("custom_fields being passed:", JSON.stringify(modelData.custom_fields, null, 2));
-            console.log("custom_fields type:", typeof modelData.custom_fields);
-            console.log("custom_fields keys count:", modelData.custom_fields ? Object.keys(modelData.custom_fields).length : 0);
-
-            console.log("=== END PASSING TO MODEL ===");
-
             const organization = await this.organizationModel.create(modelData);
 
-            // Log the created organization for debugging
-            console.log("Organization created successfully:", organization);
-
-            // Auto-create default welcome document for the organization
             let defaultDocument = null;
             try {
                 defaultDocument = await this.documentModel.createDefaultOrganizationDocument(
@@ -158,7 +134,6 @@ class OrganizationController {
                     organization.name,
                     userId
                 );
-                console.log("Default document created:", defaultDocument);
             } catch (docError) {
                 console.error('Error creating default document:', docError);
                 // Don't fail organization creation if document creation fails
@@ -182,7 +157,6 @@ class OrganizationController {
                             created_by: userId
                         });
                         createdEntities.offices.push(office);
-                        console.log("Office created:", office);
                     } catch (officeError) {
                         console.error('Error creating office:', officeError);
                         // Continue with other offices even if one fails
@@ -200,7 +174,6 @@ class OrganizationController {
                             created_by: userId
                         });
                         createdEntities.teams.push(team);
-                        console.log("Team created:", team);
                     } catch (teamError) {
                         console.error('Error creating team:', teamError);
                         // Continue with other teams even if one fails
@@ -218,7 +191,6 @@ class OrganizationController {
                             created_by: userId
                         });
                         createdEntities.users.push(user);
-                        console.log("User created:", user);
                     } catch (userError) {
                         console.error('Error creating user:', userError);
                         // Continue with other users even if one fails
@@ -250,10 +222,8 @@ class OrganizationController {
             const userId = req.user.id;
             const userRole = req.user.role;
 
-            // Only admin/owner can see all organizations, other users only see their own
-            const organizations = await this.organizationModel.getAll(
-                ['admin', 'owner'].includes(userRole) ? null : userId
-            );
+            // All users can see all organizations
+            const organizations = await this.organizationModel.getAll(null);
 
 
             res.status(200).json({
@@ -280,13 +250,7 @@ class OrganizationController {
             const userId = req.user.id;
             const userRole = req.user.role;
 
-            // Only admin/owner can see any organization, other users only see their own
-            const organization = await this.organizationModel.getById(
-                id,
-                ['admin', 'owner'].includes(userRole) ? null : userId
-            );
-
-            console.log('organization', organization)
+            const organization = await this.organizationModel.getById(id, null);
 
             if (!organization) {
                 return res.status(404).json({
@@ -331,10 +295,7 @@ class OrganizationController {
         try {
             const userId = req.user.id;
             const userRole = req.user.role;
-            const filterByUser = !['admin', 'owner', 'developer'].includes(userRole);
-            const orgIds = await this.placementModel.findOrganizationIdsWithApprovedPlacements(
-                filterByUser ? userId : null
-            );
+            const orgIds = await this.placementModel.findOrganizationIdsWithApprovedPlacements(null);
             if (orgIds.length === 0) {
                 return res.status(200).json({ success: true, count: 0, organizations: [] });
             }
@@ -361,36 +322,19 @@ class OrganizationController {
             const { id } = req.params;
             const updateData = req.body;
 
-            console.log(`Update request for organization ${id} received`);
-            console.log("Request user:", req.user);
-            console.log("Update data:", updateData);
-
             // Get the current user's ID from the auth middleware
             const userId = req.user.id;
             const userRole = req.user.role;
 
-            console.log(`User role: ${userRole}, User ID: ${userId}`);
-
-            // For admin/owner roles, allow updating any organization
-            // For other roles, they can only update their own organizations
-            const organizationOwner = ['admin', 'owner'].includes(userRole) ? null : userId;
-
-            // Try to update the organization
-            const organization = await this.organizationModel.update(
-                id,
-                updateData,
-                organizationOwner
-            );
+            const organization = await this.organizationModel.update(id, updateData, null);
 
             if (!organization) {
-                console.log("Update failed - organization not found or no permission");
                 return res.status(404).json({
                     success: false,
                     message: 'Organization not found or you do not have permission to update it'
                 });
             }
 
-            console.log("Organization updated successfully:", organization);
             res.status(200).json({
                 success: true,
                 message: 'Organization updated successfully',
@@ -492,7 +436,6 @@ class OrganizationController {
                             html: htmlContent
                         });
 
-                        console.log(`Email notifications sent to ${recipients.length} recipient(s) for organization note ${note.id}`);
                     }
                 } catch (emailError) {
                     // Log email error but don't fail the note creation
@@ -565,33 +508,20 @@ class OrganizationController {
     async delete(req, res) {
         try {
             const { id } = req.params;
-            console.log(`Delete request for organization ${id} received`);
 
             // Get the current user's ID from the auth middleware
             const userId = req.user.id;
             const userRole = req.user.role;
 
-            console.log(`User role: ${userRole}, User ID: ${userId}`);
-
-            // Only admin/owner can delete any organization, others only their own
-            // Pass null for userId if admin/owner to skip permission check
-            const organizationOwner = ['admin', 'owner'].includes(userRole) ? null : userId;
-
-            // Delete the organization
-            const organization = await this.organizationModel.delete(
-                id,
-                organizationOwner
-            );
+            const organization = await this.organizationModel.delete(id, null);
 
             if (!organization) {
-                console.log("Delete failed - organization not found or no permission");
                 return res.status(404).json({
                     success: false,
                     message: 'Organization not found or you do not have permission to delete it'
                 });
             }
 
-            console.log("Organization deleted successfully:", organization.id);
             res.status(200).json({
                 success: true,
                 message: 'Organization deleted successfully'

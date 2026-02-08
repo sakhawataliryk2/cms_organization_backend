@@ -130,10 +130,7 @@ class HiringManagerController {
 
             console.log(`User ID: ${userId}, User Role: ${userRole}`);
 
-            // Only admin/owner can see all hiring managers, other users only see their own
-            const hiringManagers = await this.hiringManagerModel.getAll(
-                ['admin', 'owner'].includes(userRole) ? null : userId
-            );
+            const hiringManagers = await this.hiringManagerModel.getAll(null);
 
             console.log(`Found ${hiringManagers.length} hiring managers`);
 
@@ -172,11 +169,7 @@ class HiringManagerController {
 
             console.log(`User ID: ${userId}, User Role: ${userRole}`);
 
-            // Only admin/owner can see any hiring manager, other users only see their own
-            const hiringManager = await this.hiringManagerModel.getById(
-                id,
-                ['admin', 'owner'].includes(userRole) ? null : userId
-            );
+            const hiringManager = await this.hiringManagerModel.getById(id, null);
 
             if (!hiringManager) {
                 return res.status(404).json({
@@ -247,16 +240,7 @@ class HiringManagerController {
 
             console.log(`User role: ${userRole}, User ID: ${userId}`);
 
-            // For admin/owner roles, allow updating any hiring manager
-            // For other roles, they can only update their own hiring managers
-            const hiringManagerOwner = ['admin', 'owner'].includes(userRole) ? null : userId;
-
-            // Try to update the hiring manager
-            const hiringManager = await this.hiringManagerModel.update(
-                id,
-                updateData,
-                hiringManagerOwner
-            );
+            const hiringManager = await this.hiringManagerModel.update(id, updateData, null);
 
             if (!hiringManager) {
                 console.log("Update failed - hiring manager not found or no permission");
@@ -326,14 +310,7 @@ class HiringManagerController {
 
             console.log(`User role: ${userRole}, User ID: ${userId}`);
 
-            // Only admin/owner can delete any hiring manager, others only their own
-            const hiringManagerOwner = ['admin', 'owner'].includes(userRole) ? null : userId;
-
-            // Delete the hiring manager
-            const hiringManager = await this.hiringManagerModel.delete(
-                id,
-                hiringManagerOwner
-            );
+            const hiringManager = await this.hiringManagerModel.delete(id, null);
 
             if (!hiringManager) {
                 console.log("Delete failed - hiring manager not found or no permission");
@@ -562,11 +539,7 @@ class HiringManagerController {
             const userId = req.user.id;
             const userRole = req.user.role;
 
-            // Get hiring managers for this organization
-            const hiringManagers = await this.hiringManagerModel.getByOrganization(
-                organizationId,
-                ['admin', 'owner'].includes(userRole) ? null : userId
-            );
+            const hiringManagers = await this.hiringManagerModel.getByOrganization(organizationId, null);
 
             console.log(`Found ${hiringManagers.length} hiring managers for organization ${organizationId}`);
 
@@ -603,11 +576,7 @@ class HiringManagerController {
             const userId = req.user.id;
             const userRole = req.user.role;
 
-            // Search hiring managers
-            const hiringManagers = await this.hiringManagerModel.search(
-                query.trim(),
-                ['admin', 'owner'].includes(userRole) ? null : userId
-            );
+            const hiringManagers = await this.hiringManagerModel.search(query.trim(), null);
 
             console.log(`Found ${hiringManagers.length} hiring managers matching query: ${query}`);
 
@@ -636,10 +605,7 @@ class HiringManagerController {
             const userId = req.user.id;
             const userRole = req.user.role;
 
-            // Get statistics
-            const stats = await this.hiringManagerModel.getStats(
-                ['admin', 'owner'].includes(userRole) ? null : userId
-            );
+            const stats = await this.hiringManagerModel.getStats(null);
 
             console.log('Successfully retrieved hiring manager statistics');
 

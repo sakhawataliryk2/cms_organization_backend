@@ -162,10 +162,7 @@ class JobController {
             const userId = req.user.id;
             const userRole = req.user.role;
 
-            // Only admin/owner can see all jobs, other users only see their own
-            const jobs = await this.jobModel.getAll(
-                ['admin', 'owner'].includes(userRole) ? null : userId
-            );
+            const jobs = await this.jobModel.getAll(null);
 
             res.status(200).json({
                 success: true,
@@ -191,11 +188,7 @@ class JobController {
             const userId = req.user.id;
             const userRole = req.user.role;
 
-            // Only admin/owner can see any job, other users only see their own
-            const job = await this.jobModel.getById(
-                id,
-                ['admin', 'owner'].includes(userRole) ? null : userId
-            );
+            const job = await this.jobModel.getById(id, null);
 
             if (!job) {
                 return res.status(404).json({
@@ -234,16 +227,7 @@ class JobController {
 
             console.log(`User role: ${userRole}, User ID: ${userId}`);
 
-            // For admin/owner roles, allow updating any job
-            // For other roles, they can only update their own jobs
-            const jobOwner = ['admin', 'owner'].includes(userRole) ? null : userId;
-
-            // Try to update the job
-            const job = await this.jobModel.update(
-                id,
-                updateData,
-                jobOwner
-            );
+            const job = await this.jobModel.update(id, updateData, null);
 
             if (!job) {
                 console.log("Update failed - job not found or no permission");
@@ -295,14 +279,7 @@ class JobController {
 
             console.log(`User role: ${userRole}, User ID: ${userId}`);
 
-            // Only admin/owner can delete any job, others only their own
-            const jobOwner = ['admin', 'owner'].includes(userRole) ? null : userId;
-
-            // Delete the job
-            const job = await this.jobModel.delete(
-                id,
-                jobOwner
-            );
+            const job = await this.jobModel.delete(id, null);
 
             if (!job) {
                 console.log("Delete failed - job not found or no permission");
@@ -347,11 +324,7 @@ class JobController {
             const { targets } = req.body || {};
             const targetList = Array.isArray(targets) ? targets : ['job_board'];
 
-            const userId = req.user.id;
-            const userRole = req.user.role;
-            const jobOwner = ['admin', 'owner'].includes(userRole) ? null : userId;
-
-            const job = await this.jobModel.getById(id, jobOwner);
+            const job = await this.jobModel.getById(id, null);
             if (!job) {
                 return res.status(404).json({
                     success: false,
@@ -807,11 +780,7 @@ class JobController {
 
             console.log(`Exporting ${jobIds.length} jobs to XML for user ${userId} (${userRole})`);
 
-            // Fetch jobs
-            const jobs = await this.jobModel.getByIds(
-                jobIds,
-                ['admin', 'owner'].includes(userRole) ? null : userId
-            );
+            const jobs = await this.jobModel.getByIds(jobIds, null);
 
             if (jobs.length === 0) {
                 return res.status(404).json({

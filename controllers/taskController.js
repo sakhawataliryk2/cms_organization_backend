@@ -106,10 +106,8 @@ class TaskController {
 
             console.log(`User ID: ${userId}, User Role: ${userRole}`);
 
-            // Only admin/owner can see all tasks, other users only see their own or assigned to them
-            const tasks = await this.taskModel.getAll(
-                ['admin', 'owner'].includes(userRole) ? null : userId
-            );
+            // All users can see all tasks
+            const tasks = await this.taskModel.getAll(null);
 
             console.log(`Found ${tasks.length} tasks`);
 
@@ -148,11 +146,8 @@ class TaskController {
 
             console.log(`User ID: ${userId}, User Role: ${userRole}`);
 
-            // Only admin/owner can see any task, other users only see their own or assigned to them
-            const task = await this.taskModel.getById(
-                id,
-                ['admin', 'owner'].includes(userRole) ? null : userId
-            );
+            // All users can see any task
+            const task = await this.taskModel.getById(id, null);
 
             if (!task) {
                 return res.status(404).json({
@@ -201,16 +196,8 @@ class TaskController {
 
             console.log(`User role: ${userRole}, User ID: ${userId}`);
 
-            // For admin/owner roles, allow updating any task
-            // For other roles, they can only update their own tasks or assigned to them
-            const taskOwner = ['admin', 'owner'].includes(userRole) ? null : userId;
-
-            // Try to update the task
-            const task = await this.taskModel.update(
-                id,
-                updateData,
-                taskOwner
-            );
+            // All users can update any task
+            const task = await this.taskModel.update(id, updateData, null);
 
             if (!task) {
                 console.log("Update failed - task not found or no permission");
@@ -318,14 +305,8 @@ class TaskController {
 
             console.log(`User role: ${userRole}, User ID: ${userId}`);
 
-            // Only admin/owner can delete any task, others only their own
-            const taskOwner = ['admin', 'owner'].includes(userRole) ? null : userId;
-
-            // Delete the task
-            const task = await this.taskModel.delete(
-                id,
-                taskOwner
-            );
+            // All users can delete any task
+            const task = await this.taskModel.delete(id, null);
 
             if (!task) {
                 console.log("Delete failed - task not found or no permission");
@@ -501,10 +482,8 @@ class TaskController {
             const userId = req.user.id;
             const userRole = req.user.role;
 
-            // Get statistics
-            const stats = await this.taskModel.getStats(
-                ['admin', 'owner'].includes(userRole) ? null : userId
-            );
+            // All users see all task statistics
+            const stats = await this.taskModel.getStats(null);
 
             console.log('Successfully retrieved task statistics');
 
@@ -543,7 +522,7 @@ class TaskController {
             const task = await this.taskModel.update(
                 id,
                 { isCompleted: true, status: 'Completed' },
-                ['admin', 'owner'].includes(userRole) ? null : userId
+                null
             );
 
             if (!task) {
@@ -589,7 +568,7 @@ class TaskController {
             const task = await this.taskModel.update(
                 id,
                 { isCompleted: false, status: 'Pending' },
-                ['admin', 'owner'].includes(userRole) ? null : userId
+                null
             );
 
             if (!task) {

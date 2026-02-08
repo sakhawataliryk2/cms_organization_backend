@@ -2,6 +2,8 @@ const User = require("../models/user");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcrypt");
 
+const { sendMail } = require("../services/emailService");
+const baseUrl = "https://cms-organization.vercel.app";
 class AuthController {
   constructor(pool) {
     this.userModel = new User(pool);
@@ -288,11 +290,6 @@ class AuthController {
   async login(req, res) {
     let { email, password } = req.body;
 
-    console.log("BODY:", req.body);
-console.log("EMAIL:", req.body?.email);
-console.log("PASS LENGTH:", req.body?.password?.length);
-console.log("PASS:", req.body?.password);
-
     // Convert email to lowercase for case-insensitive login
     email = email.toLowerCase().trim();
 
@@ -421,6 +418,56 @@ console.log("PASS:", req.body?.password);
       });
     }
   }
+
+  // async sendResetPasswordEmail(req, res) {
+  //   const { email } = req.body;
+
+  //   if (!email) {
+  //     return res.status(400).json({
+  //       success: false,
+  //       message: "Email is required",
+  //     });
+  //   }
+    
+  //   try {
+  //     const user = await this.userModel.findByEmail(email);
+  //     if (!user) {
+  //       return res.status(404).json({
+  //         success: false,
+  //         message: "User not found",
+  //       });
+  //     }
+  //     const token = jwt.sign(
+  //       { userId: user.id, email: user.email, userType: user.role },
+  //       process.env.JWT_SECRET || "default_secret_key",
+  //       { expiresIn: "7d" }
+  //     );
+  //     await this.userModel.updateToken(user.id, token);
+  //     await sendMail({
+  //       to: user.email,
+  //       subject: "Reset Password",
+  //       html: `
+  //         <div>
+  //           <p>Hello,</p>
+  //           <p>Click the link below to reset your password:</p>
+  //           <a href="${baseUrl}/dashboard/auth/reset-password?token=${token}">Reset Password</a>
+  //           <p>If you did not request a password reset, please ignore this email.</p>
+  //         </div>
+  //       `,
+  //     });
+  //     return res.status(200).json({
+  //       success: true,
+  //       message: "Reset password email sent",
+  //     });
+  //   } catch (error) {
+  //     console.error("Error sending reset password email:", error);
+  //     return res.status(500).json({
+  //       success: false,
+  //       message: "An error occurred while sending the reset password email",
+  //     });
+  //   }
+    
+  // }
 }
 
 module.exports = AuthController;
