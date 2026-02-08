@@ -10,6 +10,11 @@ function createTearsheetRouter(tearsheetController, authMiddleware) {
 
   router.get("/", tearsheetController.getAll);
   router.get("/organization/:organizationId", tearsheetController.getTearsheetsByOrganizationId);
+  router.get("/job/:jobId", tearsheetController.getTearsheetsByJobId);
+  router.get("/lead/:leadId", tearsheetController.getTearsheetsByLeadId);
+  router.get("/hiring-manager/:hiringManagerId", tearsheetController.getTearsheetsByHiringManagerId);
+  router.get("/job-seeker/:jobSeekerId", tearsheetController.getTearsheetsByJobSeekerId);
+  router.get("/task/:taskId", tearsheetController.getTearsheetsByTaskId);
   router.get("/:id", tearsheetController.getById);
   router.get("/:id/records", tearsheetController.getRecords);
   router.get("/:id/organizations", tearsheetController.getOrganizations);

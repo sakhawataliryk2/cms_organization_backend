@@ -71,6 +71,15 @@ class Tearsheet {
         )
       `);
 
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS tearsheet_tasks (
+          tearsheet_id INTEGER REFERENCES tearsheets(id) ON DELETE CASCADE,
+          task_id INTEGER REFERENCES tasks(id) ON DELETE CASCADE,
+          added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (tearsheet_id, task_id)
+        )
+      `);
+
       // Migrate existing data from single FKs to junction tables
       await client.query(`
         INSERT INTO tearsheet_job_seekers (tearsheet_id, job_seeker_id)
@@ -351,6 +360,96 @@ class Tearsheet {
     }
   }
 
+  async getTearsheetsByJobId(jobId) {
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query(
+        `
+        SELECT DISTINCT t.id, t.name, t.visibility, t.created_at
+        FROM tearsheets t
+        INNER JOIN tearsheet_jobs tj ON tj.tearsheet_id = t.id AND tj.job_id = $1
+        ORDER BY t.name
+        `,
+        [jobId]
+      );
+      return result.rows;
+    } finally {
+      client.release();
+    }
+  }
+
+  async getTearsheetsByLeadId(leadId) {
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query(
+        `
+        SELECT DISTINCT t.id, t.name, t.visibility, t.created_at
+        FROM tearsheets t
+        INNER JOIN tearsheet_leads tl ON tl.tearsheet_id = t.id AND tl.lead_id = $1
+        ORDER BY t.name
+        `,
+        [leadId]
+      );
+      return result.rows;
+    } finally {
+      client.release();
+    }
+  }
+
+  async getTearsheetsByHiringManagerId(hiringManagerId) {
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query(
+        `
+        SELECT DISTINCT t.id, t.name, t.visibility, t.created_at
+        FROM tearsheets t
+        INNER JOIN tearsheet_hiring_managers thm ON thm.tearsheet_id = t.id AND thm.hiring_manager_id = $1
+        ORDER BY t.name
+        `,
+        [hiringManagerId]
+      );
+      return result.rows;
+    } finally {
+      client.release();
+    }
+  }
+
+  async getTearsheetsByJobSeekerId(jobSeekerId) {
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query(
+        `
+        SELECT DISTINCT t.id, t.name, t.visibility, t.created_at
+        FROM tearsheets t
+        INNER JOIN tearsheet_job_seekers tjs ON tjs.tearsheet_id = t.id AND tjs.job_seeker_id = $1
+        ORDER BY t.name
+        `,
+        [jobSeekerId]
+      );
+      return result.rows;
+    } finally {
+      client.release();
+    }
+  }
+
+  async getTearsheetsByTaskId(taskId) {
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query(
+        `
+        SELECT DISTINCT t.id, t.name, t.visibility, t.created_at
+        FROM tearsheets t
+        INNER JOIN tearsheet_tasks tt ON tt.tearsheet_id = t.id AND tt.task_id = $1
+        ORDER BY t.name
+        `,
+        [taskId]
+      );
+      return result.rows;
+    } finally {
+      client.release();
+    }
+  }
+
   async getPlacements(tearsheetId) {
     const client = await this.pool.connect();
     try {
@@ -390,7 +489,7 @@ class Tearsheet {
   }
 
   async associate(tearsheetId, data) {
-    const { job_seeker_id, hiring_manager_id, job_id, lead_id, organization_id } = data;
+    const { job_seeker_id, hiring_manager_id, job_id, lead_id, organization_id, task_id } = data;
     const client = await this.pool.connect();
     try {
       console.log(`Starting association for tearsheet ${tearsheetId}`, data);
@@ -432,6 +531,14 @@ class Tearsheet {
         await client.query(
           `INSERT INTO tearsheet_leads (tearsheet_id, lead_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
           [tearsheetId, lead_id]
+        );
+      }
+
+      if (task_id) {
+        console.log(`Adding task ${task_id} to tearsheet ${tearsheetId}`);
+        await client.query(
+          `INSERT INTO tearsheet_tasks (tearsheet_id, task_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+          [tearsheetId, task_id]
         );
       }
 

@@ -198,6 +198,111 @@ class TearsheetController {
     }
   }
 
+  async getTearsheetsByJobId(req, res) {
+    try {
+      const { jobId } = req.params;
+      if (!jobId || isNaN(parseInt(jobId))) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid job ID",
+        });
+      }
+      const tearsheets = await this.tearsheetModel.getTearsheetsByJobId(parseInt(jobId));
+      return res.json({ success: true, tearsheets });
+    } catch (error) {
+      console.error("Error fetching tearsheets for job:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to fetch tearsheets for job",
+        error: process.env.NODE_ENV === "production" ? undefined : error.message,
+      });
+    }
+  }
+
+  async getTearsheetsByLeadId(req, res) {
+    try {
+      const { leadId } = req.params;
+      if (!leadId || isNaN(parseInt(leadId))) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid lead ID",
+        });
+      }
+      const tearsheets = await this.tearsheetModel.getTearsheetsByLeadId(parseInt(leadId));
+      return res.json({ success: true, tearsheets });
+    } catch (error) {
+      console.error("Error fetching tearsheets for lead:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to fetch tearsheets for lead",
+        error: process.env.NODE_ENV === "production" ? undefined : error.message,
+      });
+    }
+  }
+
+  async getTearsheetsByHiringManagerId(req, res) {
+    try {
+      const { hiringManagerId } = req.params;
+      if (!hiringManagerId || isNaN(parseInt(hiringManagerId))) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid hiring manager ID",
+        });
+      }
+      const tearsheets = await this.tearsheetModel.getTearsheetsByHiringManagerId(parseInt(hiringManagerId));
+      return res.json({ success: true, tearsheets });
+    } catch (error) {
+      console.error("Error fetching tearsheets for hiring manager:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to fetch tearsheets for hiring manager",
+        error: process.env.NODE_ENV === "production" ? undefined : error.message,
+      });
+    }
+  }
+
+  async getTearsheetsByJobSeekerId(req, res) {
+    try {
+      const { jobSeekerId } = req.params;
+      if (!jobSeekerId || isNaN(parseInt(jobSeekerId))) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid job seeker ID",
+        });
+      }
+      const tearsheets = await this.tearsheetModel.getTearsheetsByJobSeekerId(parseInt(jobSeekerId));
+      return res.json({ success: true, tearsheets });
+    } catch (error) {
+      console.error("Error fetching tearsheets for job seeker:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to fetch tearsheets for job seeker",
+        error: process.env.NODE_ENV === "production" ? undefined : error.message,
+      });
+    }
+  }
+
+  async getTearsheetsByTaskId(req, res) {
+    try {
+      const { taskId } = req.params;
+      if (!taskId || isNaN(parseInt(taskId))) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid task ID",
+        });
+      }
+      const tearsheets = await this.tearsheetModel.getTearsheetsByTaskId(parseInt(taskId));
+      return res.json({ success: true, tearsheets });
+    } catch (error) {
+      console.error("Error fetching tearsheets for task:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to fetch tearsheets for task",
+        error: process.env.NODE_ENV === "production" ? undefined : error.message,
+      });
+    }
+  }
+
   async getPlacements(req, res) {
     try {
       const { id } = req.params;
@@ -260,7 +365,7 @@ class TearsheetController {
   async associate(req, res) {
     try {
       const { id } = req.params;
-      const { job_seeker_id, hiring_manager_id, job_id, lead_id, organization_id } = req.body;
+      const { job_seeker_id, hiring_manager_id, job_id, lead_id, organization_id, task_id } = req.body;
 
       console.log('Associating record with tearsheet:', { id, job_seeker_id, hiring_manager_id, job_id, lead_id, organization_id });
 
@@ -277,6 +382,7 @@ class TearsheetController {
         job_id: job_id ? parseInt(job_id) : null,
         lead_id: lead_id ? parseInt(lead_id) : null,
         organization_id: organization_id ? parseInt(organization_id) : null,
+        task_id: task_id ? parseInt(task_id) : null,
       });
 
       return res.json({
