@@ -1,9 +1,12 @@
 const Task = require('../models/task');
 const { sendMail } = require('../services/emailService');
+const EmailTemplateModel = require('../models/emailTemplateModel');
+const { renderTemplate } = require('../utils/templateRenderer');
 
 class TaskController {
     constructor(pool) {
         this.taskModel = new Task(pool);
+        this.emailTemplateModel = new EmailTemplateModel(pool);
         this.create = this.create.bind(this);
         this.getAll = this.getAll.bind(this);
         this.getById = this.getById.bind(this);
@@ -245,7 +248,19 @@ class TaskController {
         try {
             const tasks = await this.taskModel.getTasksDueForReminder();
             const results = { sent: 0, errors: [] };
+            
+            // Get email template for task reminders
+            const template = await this.emailTemplateModel.getTemplateByType('TASK_REMINDER');
+            
             for (const task of tasks) {
+                // Prevent duplicate processing: double-check reminder_sent_at before sending
+                // This provides an additional safety check beyond the query filter
+                const taskCheck = await this.taskModel.getById(task.id, null);
+                if (taskCheck && taskCheck.reminder_sent_at) {
+                    console.log(`Task ${task.id} already has reminder_sent_at, skipping`);
+                    continue;
+                }
+                
                 const emails = [];
                 if (task.created_by_email) emails.push(task.created_by_email);
                 if (task.assigned_to_email && task.assigned_to_email !== task.created_by_email) emails.push(task.assigned_to_email);
@@ -254,34 +269,97 @@ class TaskController {
                     await this.taskModel.markReminderSent(task.id);
                     continue;
                 }
+                
+                // Format due date/time
+                const dueDate = task.due_date ? new Date(task.due_date).toLocaleDateString() : 'Not set';
+                const dueTime = task.due_time || '';
                 const dueStr = task.due_date && task.due_time
-                    ? `${task.due_date} ${task.due_time}`
-                    : task.due_date || 'Not set';
+                    ? `${dueDate} ${dueTime}`
+                    : task.due_date ? dueDate : 'Not set';
+                
+                // Build task link
+                const baseUrl = process.env.FRONTEND_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+                const taskLink = `${baseUrl}/dashboard/tasks/view?id=${task.id}`;
+                const taskLinkHtml = `<a href="${taskLink}" style="display:inline-block;background-color:#4CAF50;color:white;padding:10px 20px;text-decoration:none;border-radius:5px;">View Task</a>`;
+                
+                // Prepare template variables
+                const vars = {
+                    taskTitle: task.title || 'Task',
+                    taskDescription: task.description || '',
+                    dueDate: dueDate,
+                    dueTime: dueTime,
+                    dueDateAndTime: dueStr,
+                    assignedTo: task.assigned_to_name || 'Not assigned',
+                    createdBy: task.created_by_name || 'Unknown',
+                    organizationName: task.organization_name || '',
+                    hiringManagerName: task.hiring_manager_name || '',
+                    taskLink: taskLink,
+                };
+                
+                const bodyVars = {
+                    ...vars,
+                    taskLink: taskLinkHtml, // HTML version for email body
+                };
+                
+                const safeKeys = ['taskLink'];
+                
                 try {
+                    let subject, html, text;
+                    
+                    if (template) {
+                        // Use custom template
+                        subject = renderTemplate(template.subject, vars, safeKeys);
+                        html = renderTemplate(template.body, bodyVars, safeKeys);
+                        html = html.replace(/\r\n/g, "\n").replace(/\n/g, "<br/>");
+                        text = renderTemplate(template.body, vars, safeKeys);
+                    } else {
+                        // Fallback to default template
+                        subject = `Task reminder: ${task.title || 'Task'}`;
+                        html = `<p>This is a reminder for the following task:</p><p><strong>${task.title || 'Task'}</strong></p><p>Due: ${dueStr}</p><p>You are receiving this as the task owner or assignee.</p><p>${taskLinkHtml}</p>`;
+                        text = `Task reminder: ${task.title || 'Task'}. Due: ${dueStr}. View task: ${taskLink}`;
+                    }
+                    
                     await sendMail({
                         to: emails,
-                        subject: `Task reminder: ${task.title || 'Task'}`,
-                        html: `<p>This is a reminder for the following task:</p><p><strong>${task.title || 'Task'}</strong></p><p>Due: ${dueStr}</p><p>You are receiving this as the task owner or assignee.</p>`,
-                        text: `Task reminder: ${task.title || 'Task'}. Due: ${dueStr}.`,
+                        subject,
+                        html,
+                        text,
                     });
+                    
+                    // Mark reminder as sent AFTER successful email send
                     await this.taskModel.markReminderSent(task.id);
                     results.sent++;
                 } catch (err) {
+                    console.error(`Error sending reminder for task ${task.id}:`, err);
                     results.errors.push({ taskId: task.id, error: err.message });
                 }
             }
-            res.status(200).json({
+            
+            const response = {
                 success: true,
                 message: `Processed ${tasks.length} task(s), sent ${results.sent} reminder(s)`,
                 ...results,
-            });
+            };
+            
+            if (res && res.status) {
+                res.status(200).json(response);
+            } else {
+                // Called from cron, just log
+                console.log(response.message);
+            }
+            
+            return response;
         } catch (error) {
             console.error('Error processing task reminders:', error);
-            res.status(500).json({
+            const errorResponse = {
                 success: false,
                 message: 'Failed to process reminders',
                 error: process.env.NODE_ENV === 'production' ? undefined : error.message,
-            });
+            };
+            if (res && res.status) {
+                res.status(500).json(errorResponse);
+            }
+            throw error;
         }
     }
 

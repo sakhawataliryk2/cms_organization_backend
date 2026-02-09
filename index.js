@@ -706,6 +706,8 @@ if (process.env.NODE_ENV !== "production") {
 try {
   const cron = require("node-cron");
   const { runArchiveCleanup } = require("./jobs/archiveCleanup");
+  const TaskController = require("./controllers/taskController");
+  const taskController = new TaskController(getPool());
 
   // Run cleanup job daily at 2 AM
   if (process.env.NODE_ENV !== "production" || process.env.ENABLE_CRON === "true") {
@@ -718,6 +720,27 @@ try {
       }
     });
     console.log("Archive cleanup scheduler initialized (runs daily at 2 AM)");
+
+    // Run task reminders every 10 minutes
+    cron.schedule("*/10 * * * *", async () => {
+      console.log("Running scheduled task reminder check...");
+      try {
+        // Create a mock request/response object for the controller method
+        const mockReq = { user: { id: 1, role: "admin" } };
+        const mockRes = {
+          status: (code) => ({
+            json: (data) => {
+              console.log(`Task reminders processed: ${data.message || "completed"}`);
+              return mockRes;
+            }
+          })
+        };
+        await taskController.processReminders(mockReq, mockRes);
+      } catch (error) {
+        console.error("Error running task reminder check:", error);
+      }
+    });
+    console.log("Task reminder scheduler initialized (runs every 10 minutes)");
   }
 } catch (error) {
   console.log("node-cron not available. Scheduled cleanup jobs will not run automatically.");
