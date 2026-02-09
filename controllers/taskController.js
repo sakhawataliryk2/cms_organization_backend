@@ -246,20 +246,39 @@ class TaskController {
     // Process task reminders: send email to owner (created_by) and assigned_to at designated time
     async processReminders(req, res) {
         try {
+            console.log(`[processReminders] Starting reminder check at ${new Date().toISOString()}`);
             const tasks = await this.taskModel.getTasksDueForReminder();
+            console.log(`[processReminders] Found ${tasks.length} task(s) due for reminder`);
+            
+            if (tasks.length > 0) {
+                console.log(`[processReminders] Task details:`, tasks.map(t => ({
+                    id: t.id,
+                    title: t.title,
+                    due_date: t.due_date,
+                    due_time: t.due_time,
+                    reminder_minutes_before_due: t.reminder_minutes_before_due,
+                    custom_fields_reminder: t.custom_fields?.Reminder || t.custom_fields?.['Reminder']
+                })));
+            }
+            
             const results = { sent: 0, errors: [] };
             
             // Get email template for task reminders
             const template = await this.emailTemplateModel.getTemplateByType('TASK_REMINDER');
+            console.log(`[processReminders] Email template ${template ? 'found' : 'not found, using default'}`);
             
             for (const task of tasks) {
+                console.log(`[processReminders] Processing task ${task.id}: "${task.title}"`);
+                
                 // Prevent duplicate processing: double-check reminder_sent_at before sending
                 // This provides an additional safety check beyond the query filter
                 const taskCheck = await this.taskModel.getById(task.id, null);
                 if (taskCheck && taskCheck.reminder_sent_at) {
-                    console.log(`Task ${task.id} already has reminder_sent_at, skipping`);
+                    console.log(`[processReminders] Task ${task.id} already has reminder_sent_at (${taskCheck.reminder_sent_at}), skipping`);
                     continue;
                 }
+                
+                console.log(`[processReminders] Task ${task.id} passed duplicate check, proceeding with email`);
                 
                 const emails = [];
                 if (task.created_by_email) emails.push(task.created_by_email);
@@ -319,6 +338,7 @@ class TaskController {
                         text = `Task reminder: ${task.title || 'Task'}. Due: ${dueStr}. View task: ${taskLink}`;
                     }
                     
+                    console.log(`[processReminders] Sending email to: ${emails.join(', ')}`);
                     await sendMail({
                         to: emails,
                         subject,
@@ -328,9 +348,10 @@ class TaskController {
                     
                     // Mark reminder as sent AFTER successful email send
                     await this.taskModel.markReminderSent(task.id);
+                    console.log(`[processReminders] Successfully sent reminder for task ${task.id} and marked as sent`);
                     results.sent++;
                 } catch (err) {
-                    console.error(`Error sending reminder for task ${task.id}:`, err);
+                    console.error(`[processReminders] Error sending reminder for task ${task.id}:`, err);
                     results.errors.push({ taskId: task.id, error: err.message });
                 }
             }
@@ -341,11 +362,16 @@ class TaskController {
                 ...results,
             };
             
+            console.log(`[processReminders] Completed: ${response.message}`);
+            if (results.errors.length > 0) {
+                console.log(`[processReminders] Errors:`, results.errors);
+            }
+            
             if (res && res.status) {
                 res.status(200).json(response);
             } else {
                 // Called from cron, just log
-                console.log(response.message);
+                console.log(`[processReminders] ${response.message}`);
             }
             
             return response;

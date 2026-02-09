@@ -566,6 +566,8 @@ class Task {
     async getTasksDueForReminder() {
         const client = await this.pool.connect();
         try {
+            // Simplified query: fetch all tasks with reminders set, then filter in JavaScript
+            // This is more reliable than complex SQL regex parsing
             const query = `
                 SELECT t.id, t.title, t.description, t.due_date, t.due_time, t.owner, 
                        t.reminder_minutes_before_due,
@@ -585,61 +587,71 @@ class Task {
                   AND (t.is_completed IS NULL OR t.is_completed = false)
                   AND t.due_date IS NOT NULL
                   AND (
-                    -- Check reminder_minutes_before_due column (legacy support)
-                    (t.reminder_minutes_before_due IS NOT NULL 
-                     AND ((t.due_date + coalesce(t.due_time, '00:00'::time))::timestamp
-                          - (t.reminder_minutes_before_due || ' minutes')::interval) <= now())
+                    -- Has reminder_minutes_before_due set (legacy)
+                    t.reminder_minutes_before_due IS NOT NULL
                     OR
-                    -- Check custom_fields->>'Reminder' (new custom field)
-                    -- Extract numeric value from strings like "5 minutes", "1 hour", "1 day"
+                    -- Has Reminder custom field set (new)
                     (t.custom_fields->>'Reminder' IS NOT NULL 
                      AND t.custom_fields->>'Reminder' != ''
-                     AND t.custom_fields->>'Reminder' != 'None'
-                     AND (
-                       -- Try to parse "X minutes" format
-                       (t.custom_fields->>'Reminder' ~ '^\d+\s*(minute|min|m)\s*$' 
-                        AND ((t.due_date + coalesce(t.due_time, '00:00'::time))::timestamp
-                             - ((regexp_replace(t.custom_fields->>'Reminder', '[^0-9]', '', 'g'))::integer || ' minutes')::interval) <= now())
-                       OR
-                       -- Try to parse "X hour(s)" or "X hr" format
-                       (t.custom_fields->>'Reminder' ~ '^\d+\s*(hour|hr|h)\s*$'
-                        AND ((t.due_date + coalesce(t.due_time, '00:00'::time))::timestamp
-                             - ((regexp_replace(t.custom_fields->>'Reminder', '[^0-9]', '', 'g'))::integer * 60 || ' minutes')::interval) <= now())
-                       OR
-                       -- Try to parse "X day(s)" or "X d" format
-                       (t.custom_fields->>'Reminder' ~ '^\d+\s*(day|d)\s*$'
-                        AND ((t.due_date + coalesce(t.due_time, '00:00'::time))::timestamp
-                             - ((regexp_replace(t.custom_fields->>'Reminder', '[^0-9]', '', 'g'))::integer * 1440 || ' minutes')::interval) <= now())
-                     )
+                     AND t.custom_fields->>'Reminder' != 'None')
                   )
             `;
             const result = await client.query(query);
-            // Process results to extract reminder_minutes from custom_fields if needed
-            const processedRows = result.rows.map(row => {
+            
+            // Helper function to parse reminder string to minutes
+            const parseReminderToMinutes = (reminderValue) => {
+                if (!reminderValue) return null;
+                if (typeof reminderValue === 'number') return reminderValue;
+                const str = String(reminderValue).toLowerCase().trim();
+                if (str === '' || str === 'none' || str === 'null') return null;
+                
+                // Match patterns like "5 minutes", "1 hour", "1 day", "5", etc.
+                const match = str.match(/(\d+)\s*(minute|minutes|min|hour|hours|hr|day|days|d|h|m)?/i);
+                if (!match) return null;
+                
+                const num = parseInt(match[1], 10);
+                const unit = match[2]?.toLowerCase() || 'minute';
+                
+                if (unit.startsWith('d') || unit === 'day') return num * 1440; // days to minutes
+                if (unit.startsWith('h') || unit === 'hour' || unit === 'hr') return num * 60; // hours to minutes
+                return num; // minutes
+            };
+            
+            // Filter tasks where reminder time has passed
+            const now = new Date();
+            const processedRows = result.rows.filter(row => {
                 let reminderMinutes = row.reminder_minutes_before_due;
-                // If reminder_minutes_before_due is null but custom_fields has Reminder, parse it
-                if (!reminderMinutes && row.custom_fields && row.custom_fields.Reminder) {
-                    const reminderValue = row.custom_fields.Reminder;
-                    if (typeof reminderValue === 'string') {
-                        const str = reminderValue.toLowerCase().trim();
-                        const match = str.match(/(\d+)\s*(minute|min|hour|hr|day|d|h|m)?/i);
-                        if (match) {
-                            const num = parseInt(match[1], 10);
-                            const unit = match[2]?.toLowerCase() || 'minute';
-                            if (unit.startsWith('d') || unit === 'day') {
-                                reminderMinutes = num * 1440;
-                            } else if (unit.startsWith('h') || unit === 'hour' || unit === 'hr') {
-                                reminderMinutes = num * 60;
-                            } else {
-                                reminderMinutes = num;
-                            }
-                        }
-                    } else if (typeof reminderValue === 'number') {
-                        reminderMinutes = reminderValue;
-                    }
+                
+                // Parse custom_fields Reminder if reminder_minutes_before_due is not set
+                if (!reminderMinutes && row.custom_fields) {
+                    const reminderValue = row.custom_fields.Reminder || row.custom_fields['Reminder'];
+                    reminderMinutes = parseReminderToMinutes(reminderValue);
                 }
-                return { ...row, reminder_minutes_before_due: reminderMinutes };
+                
+                if (!reminderMinutes || reminderMinutes <= 0) return false;
+                
+                // Calculate reminder time
+                if (!row.due_date) return false;
+                
+                const dueDate = new Date(row.due_date);
+                if (row.due_time) {
+                    const [hours, minutes, seconds] = row.due_time.split(':');
+                    dueDate.setHours(parseInt(hours || 0, 10), parseInt(minutes || 0, 10), parseInt(seconds || 0, 10));
+                }
+                
+                const reminderTime = new Date(dueDate.getTime() - (reminderMinutes * 60 * 1000));
+                
+                // Check if reminder time has passed
+                const shouldRemind = reminderTime <= now;
+                
+                if (shouldRemind) {
+                    // Set reminder_minutes_before_due for consistency
+                    row.reminder_minutes_before_due = reminderMinutes;
+                }
+                
+                return shouldRemind;
             });
+            
             return processedRows;
         } catch (error) {
             throw error;
