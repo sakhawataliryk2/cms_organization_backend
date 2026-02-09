@@ -577,7 +577,7 @@ class Task {
                        u.email as created_by_email, u.name as created_by_name,
                        u2.email as assigned_to_email, u2.name as assigned_to_name,
                        o.name as organization_name,
-                       hm.name as hiring_manager_name
+                       hm.first_name || ' ' || hm.last_name as hiring_manager_name
                 FROM tasks t
                 LEFT JOIN users u ON t.created_by = u.id
                 LEFT JOIN users u2 ON t.assigned_to = u2.id
