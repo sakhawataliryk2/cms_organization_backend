@@ -721,8 +721,9 @@ try {
     });
     console.log("Archive cleanup scheduler initialized (runs daily at 2 AM)");
 
-    // Run task reminders every 10 minutes
-    cron.schedule("*/10 * * * *", async () => {
+    // Run task reminders every 5 minutes for better precision
+    // This ensures reminders are sent within 5 minutes of the target time
+    cron.schedule("*/5 * * * *", async () => {
       console.log("Running scheduled task reminder check...");
       try {
         // Create a mock request/response object for the controller method
@@ -740,7 +741,7 @@ try {
         console.error("Error running task reminder check:", error);
       }
     });
-    console.log("Task reminder scheduler initialized (runs every 10 minutes)");
+    console.log("Task reminder scheduler initialized (runs every 5 minutes)");
   }
 } catch (error) {
   console.log("node-cron not available. Scheduled cleanup jobs will not run automatically.");
