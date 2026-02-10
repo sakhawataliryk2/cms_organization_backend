@@ -1,4 +1,4 @@
-const Organization = require('../models/organization');
+const Organization = require('../models/Organization');
 const Office = require('../models/office');
 const Team = require('../models/team');
 const User = require('../models/user');
@@ -32,6 +32,7 @@ class OrganizationController {
         this.updateDocument = this.updateDocument.bind(this);
         this.deleteDocument = this.deleteDocument.bind(this);
         this.getSummaryCounts = this.getSummaryCounts.bind(this);
+        this.getDependencies = this.getDependencies.bind(this);
     }
 
 
@@ -39,6 +40,27 @@ class OrganizationController {
     async initTables() {
         await this.organizationModel.initTable();
         await this.documentModel.initTable();
+    }
+
+    // Get dependency counts for an organization
+    async getDependencies(req, res) {
+        console.log('🔍 getDependencies called for organization ID:', req.params.id);
+        try {
+            const { id } = req.params;
+            const dependencyCounts = await this.organizationModel.getDependencyCounts(id);
+            console.log('✅ Dependency counts retrieved:', dependencyCounts);
+            res.status(200).json({
+                success: true,
+                counts: dependencyCounts
+            });
+        } catch (error) {
+            console.error('❌ Error getting dependency counts:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Failed to get dependency counts',
+                error: process.env.NODE_ENV === 'production' ? undefined : error.message
+            });
+        }
     }
 
     // Update the create method to properly handle all fields
@@ -396,7 +418,7 @@ class OrganizationController {
                 try {
                     const emailService = require('../services/emailService');
                     const organization = await this.organizationModel.getById(id);
-                    
+
                     // Get current user info for email
                     const User = require('../models/user');
                     const userModel = new User(this.organizationModel.pool);
@@ -405,7 +427,7 @@ class OrganizationController {
 
                     // Format email recipients (can be email addresses or user names)
                     const recipients = email_notification.filter(Boolean);
-                    
+
                     if (recipients.length > 0) {
                         const orgName = organization?.name || `Organization #${id}`;
                         const subject = `New Note Added: ${orgName}`;

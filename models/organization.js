@@ -182,38 +182,38 @@ class Organization {
             //     }
             // }
             // ✅ Convert custom fields for PostgreSQL JSONB
-        // Use JSON.stringify like other models (lead.js, job.js, etc.)
-        let customFieldsJson = '{}';
-        
-        if (custom_fields) {
-            if (typeof custom_fields === 'string') {
-                // It's already a string, validate it's valid JSON
-                try {
-                    JSON.parse(custom_fields);
-                    customFieldsJson = custom_fields;
-                } catch (e) {
-                    console.error("Invalid JSON string in custom_fields:", e);
-                    customFieldsJson = '{}';
-                }
-            } else if (typeof custom_fields === 'object' && !Array.isArray(custom_fields) && custom_fields !== null) {
-                // It's a valid object, stringify it
-                try {
-                    customFieldsJson = JSON.stringify(custom_fields);
-                } catch (e) {
-                    console.error("Error stringifying custom_fields:", e);
-                    customFieldsJson = '{}';
+            // Use JSON.stringify like other models (lead.js, job.js, etc.)
+            let customFieldsJson = '{}';
+
+            if (custom_fields) {
+                if (typeof custom_fields === 'string') {
+                    // It's already a string, validate it's valid JSON
+                    try {
+                        JSON.parse(custom_fields);
+                        customFieldsJson = custom_fields;
+                    } catch (e) {
+                        console.error("Invalid JSON string in custom_fields:", e);
+                        customFieldsJson = '{}';
+                    }
+                } else if (typeof custom_fields === 'object' && !Array.isArray(custom_fields) && custom_fields !== null) {
+                    // It's a valid object, stringify it
+                    try {
+                        customFieldsJson = JSON.stringify(custom_fields);
+                    } catch (e) {
+                        console.error("Error stringifying custom_fields:", e);
+                        customFieldsJson = '{}';
+                    }
                 }
             }
-        }
-        
-        // Debug log
-        console.log("Custom fields processing:");
-        console.log("  - Received custom_fields:", custom_fields);
-        console.log("  - Type:", typeof custom_fields);
-        console.log("  - Is array:", Array.isArray(custom_fields));
-        console.log("  - Final JSON string:", customFieldsJson);
-        console.log("  - Final JSON string length:", customFieldsJson.length);
-        console.log("  - Parsed keys count:", customFieldsJson !== '{}' ? Object.keys(JSON.parse(customFieldsJson)).length : 0);
+
+            // Debug log
+            console.log("Custom fields processing:");
+            console.log("  - Received custom_fields:", custom_fields);
+            console.log("  - Type:", typeof custom_fields);
+            console.log("  - Is array:", Array.isArray(custom_fields));
+            console.log("  - Final JSON string:", customFieldsJson);
+            console.log("  - Final JSON string length:", customFieldsJson.length);
+            console.log("  - Parsed keys count:", customFieldsJson !== '{}' ? Object.keys(JSON.parse(customFieldsJson)).length : 0);
 
             // Set up insert statement with exact column names matching the database
             const insertOrgQuery = `
@@ -313,7 +313,7 @@ class Organization {
                 console.log("custom_fields is null/undefined/empty");
             }
             console.log("=== END FINAL RETURN ===");
-            
+
             return returnedOrg;
         } catch (error) {
             // Rollback transaction in case of error
@@ -325,7 +325,7 @@ class Organization {
         }
     }
 
-    
+
 
     // Get all organizations (with optional filtering by created_by user)
     async getAll(userId = null) {
@@ -565,7 +565,7 @@ class Organization {
                 console.error('Update data received:', updateData);
                 throw new Error(`Parameter count mismatch: ${fieldPlaceholders} placeholders but ${queryParams.length} parameters`);
             }
-            
+
             // Validate that all parameters are defined (not undefined)
             queryParams.forEach((param, index) => {
                 if (param === undefined) {
@@ -584,7 +584,7 @@ class Organization {
             `;
 
             queryParams.push(id);
-            
+
             // Log the query and params for debugging
             console.log('Update query:', updateQuery);
             console.log('Update fields:', updateFields);
@@ -808,6 +808,60 @@ class Organization {
         }
     }
 
+    // Get dependency counts for an organization
+    async getDependencyCounts(id) {
+        const client = await this.pool.connect();
+        try {
+            // Count Hiring Managers
+            const hmQuery = await client.query(
+                'SELECT COUNT(*) FROM hiring_managers WHERE organization_id = $1 AND status != \'Archived\'',
+                [id]
+            );
+
+            // Count Jobs
+            const jobQuery = await client.query(
+                'SELECT COUNT(*) FROM jobs WHERE organization_id = $1 AND status != \'Archived\'',
+                [id]
+            );
+
+            // Count Placements (linked via jobs)
+            const placementQuery = await client.query(
+                `SELECT COUNT(p.id) 
+                 FROM placements p
+                 JOIN jobs j ON p.job_id = j.id
+                 WHERE j.organization_id = $1 AND p.status != 'Archived'`,
+                [id]
+            );
+
+            // Count Child Organizations
+            const childOrgQuery = await client.query(
+                'SELECT COUNT(*) FROM organizations WHERE parent_organization = $1 AND status != \'Archived\'',
+                [String(id)] // Ensure string comparison if parent_organization is stored as string
+            );
+
+            // Check for numeric parent_organization storage as well just in case
+            const childOrgNumericQuery = await client.query(
+                'SELECT COUNT(*) FROM organizations WHERE parent_organization = $1 AND status != \'Archived\'',
+                [id]
+            );
+
+            return {
+                hiring_managers: parseInt(hmQuery.rows[0].count),
+                jobs: parseInt(jobQuery.rows[0].count),
+                placements: parseInt(placementQuery.rows[0].count),
+                child_organizations: Math.max(
+                    parseInt(childOrgQuery.rows[0].count),
+                    parseInt(childOrgNumericQuery.rows[0].count)
+                )
+            };
+        } catch (error) {
+            console.error('Error getting dependency counts:', error);
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
+
     async delete(id, userId = null) {
         const client = await this.pool.connect();
         try {
@@ -860,6 +914,83 @@ class Organization {
         } catch (error) {
             // Rollback transaction in case of error
             await client.query('ROLLBACK');
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
+
+    // Cascade Archive: Archives the organization and all linked records
+    async archiveCascade(id, userId, archiveReason = 'Cascade Deletion') {
+        const client = await this.pool.connect();
+        try {
+            await client.query('BEGIN');
+
+            const timestamp = new Date();
+
+            // 1. Archive Hiring Managers
+            await client.query(`
+                UPDATE hiring_managers 
+                SET status = 'Archived', 
+                    archived_at = $2, 
+                    archive_reason = $3, 
+                    updated_at = $2
+                WHERE organization_id = $1 AND status != 'Archived'
+            `, [id, timestamp, archiveReason]);
+
+            // 2. Archive Jobs
+            await client.query(`
+                UPDATE jobs 
+                SET status = 'Archived', 
+                    archived_at = $2, 
+                    archive_reason = $3, 
+                    updated_at = $2
+                WHERE organization_id = $1 AND status != 'Archived'
+            `, [id, timestamp, archiveReason]);
+
+            // 3. Archive Placements (linked via jobs of this org)
+            await client.query(`
+                UPDATE placements p
+                SET status = 'Archived', 
+                    archived_at = $2, 
+                    archive_reason = $3, 
+                    updated_at = $2
+                FROM jobs j
+                WHERE p.job_id = j.id AND j.organization_id = $1 AND p.status != 'Archived'
+            `, [id, timestamp, archiveReason]);
+
+            // 4. Archive Child Organizations (Handle both string ID and numeric ID storage for parent_organization)
+            await client.query(`
+                UPDATE organizations 
+                SET status = 'Archived', 
+                    archived_at = $2, 
+                    archive_reason = $3, 
+                    updated_at = $2
+                WHERE (parent_organization = $1 OR parent_organization = $4) AND status != 'Archived' AND id != $1
+            `, [id, timestamp, archiveReason, String(id)]);
+
+            // 5. Archive the Organization itself
+            const result = await client.query(`
+                UPDATE organizations 
+                SET status = 'Archived', 
+                    archived_at = $2, 
+                    archive_reason = $3, 
+                    updated_at = $2
+                WHERE id = $1
+                RETURNING *
+            `, [id, timestamp, archiveReason]);
+
+            // Add history entry
+            await client.query(`
+                INSERT INTO organization_history (organization_id, action, details, performed_by)
+                VALUES ($1, 'ARCHIVE_CASCADE', $3, $2)
+            `, [id, 'ARCHIVE_CASCADE', JSON.stringify({ reason: archiveReason, original_record: result.rows[0] }), userId]);
+
+            await client.query('COMMIT');
+            return result.rows[0];
+        } catch (error) {
+            await client.query('ROLLBACK');
+            console.error("Error in archiveCascade:", error);
             throw error;
         } finally {
             client.release();

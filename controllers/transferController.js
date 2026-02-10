@@ -1,13 +1,13 @@
 // controllers/transferController.js
 const Transfer = require("../models/transfer");
-const Organization = require("../models/organization");
+const Organization = require("../models/Organization");
 const Document = require("../models/document");
 const EmailTemplateModel = require("../models/emailTemplateModel");
 const { renderTemplate } = require("../utils/templateRenderer");
 const { sendMail } = require("../services/emailService");
 
-// const PAYROLL_EMAIL = process.env.PAYROLL_EMAIL || "payroll@completestaffingsolutions.com";
-const PAYROLL_EMAIL = "yasirrehman274@gmail.com";
+const PAYROLL_EMAIL = process.env.PAYROLL_EMAIL || "payroll@completestaffingsolutions.com";
+// const PAYROLL_EMAIL = "yasirrehman274@gmail.com";
 
 class TransferController {
   constructor(pool) {
