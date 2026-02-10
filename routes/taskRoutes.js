@@ -14,6 +14,9 @@ function createTaskRouter(taskController, authMiddleware) {
     // Process reminders (call via cron or manually) - sends email to owner and assigned_to
     router.get('/process-reminders', taskController.processReminders);
 
+    // Diagnostic endpoint to check why tasks aren't matching reminder criteria
+    router.get('/diagnose-reminders', taskController.diagnoseReminders);
+
     // Get task by ID 
     // (admins can see any, regular users only their own or assigned to them)
     router.get('/:id', taskController.getById);

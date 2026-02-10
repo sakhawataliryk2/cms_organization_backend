@@ -108,7 +108,9 @@ class Task {
             description,
             isCompleted,
             dueDate,
+            due_date, // Support snake_case
             dueTime,
+            due_time, // Support snake_case
             organizationId,
             organization_id, // Support both formats
             jobSeekerId,
@@ -133,6 +135,54 @@ class Task {
             custom_fields // Support both formats
         } = taskData;
         const finalReminderMinutes = reminderMinutesBeforeDue ?? reminder_minutes_before_due;
+        
+        // Support both camelCase and snake_case for date/time fields
+        let finalDueDate = dueDate || due_date;
+        let finalDueTime = dueTime || due_time;
+        
+        // Normalize due_time: extract time part if it's a datetime string
+        if (finalDueTime && typeof finalDueTime === 'string') {
+            const timeStr = finalDueTime.trim();
+            // Check if it's a datetime string (contains 'T' or date pattern)
+            if (timeStr.includes('T') || (timeStr.includes(' ') && timeStr.match(/\d{4}-\d{2}-\d{2}/))) {
+                console.log(`[Task Model] Normalizing datetime string in due_time: ${timeStr}`);
+                // Extract time part
+                const separator = timeStr.includes('T') ? 'T' : ' ';
+                const parts = timeStr.split(separator);
+                if (parts.length >= 2) {
+                    const timePart = parts[1];
+                    const timeMatch = timePart.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+                    if (timeMatch) {
+                        const [, h, m, sec] = timeMatch;
+                        finalDueTime = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${(sec || '00').padStart(2, '0')}`;
+                        console.log(`[Task Model] Extracted time: ${finalDueTime}`);
+                    }
+                    
+                    // If due_date is not set, extract date from this datetime string
+                    if (!finalDueDate && parts.length > 0) {
+                        const datePart = parts[0];
+                        const dateMatch = datePart.match(/^(\d{4}-\d{2}-\d{2})/);
+                        if (dateMatch) {
+                            finalDueDate = dateMatch[1];
+                            console.log(`[Task Model] Extracted date: ${finalDueDate}`);
+                        }
+                    }
+                } else {
+                    console.warn(`[Task Model] Could not parse datetime string: ${timeStr}`);
+                    finalDueTime = null;
+                }
+            } else {
+                // Validate it's a valid time format (HH:MM:SS or HH:MM)
+                const timeMatch = timeStr.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+                if (timeMatch) {
+                    const [, h, m, sec] = timeMatch;
+                    finalDueTime = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${(sec || '00').padStart(2, '0')}`;
+                } else {
+                    console.warn(`[Task Model] Invalid time format: ${timeStr}, setting to null`);
+                    finalDueTime = null;
+                }
+            }
+        }
 
         // Use organizationId or organization_id (prefer organizationId)
         const finalOrganizationId = organizationId || organization_id;
@@ -198,12 +248,16 @@ class Task {
                 RETURNING *
             `;
 
+            // Log date/time values for debugging
+            console.log("Task model - dueDate:", finalDueDate);
+            console.log("Task model - dueTime:", finalDueTime);
+            
             const values = [
                 title,
                 description,
                 isCompleted || false,
-                dueDate || null,
-                dueTime || null,
+                finalDueDate || null,
+                finalDueTime || null,
                 finalOrganizationId ? parseInt(finalOrganizationId) : null,
                 finalJobSeekerId ? parseInt(finalJobSeekerId) : null,
                 finalHiringManagerId ? parseInt(finalHiringManagerId) : null,
@@ -598,6 +652,42 @@ class Task {
             `;
             const result = await client.query(query);
             
+            // Also query for tasks that have due_date but don't match reminder criteria (for debugging)
+            const debugQuery = `
+                SELECT t.id, t.title, t.due_date, t.due_time,
+                       t.reminder_minutes_before_due,
+                       t.custom_fields,
+                       t.reminder_sent_at,
+                       t.is_completed
+                FROM tasks t
+                WHERE t.due_date IS NOT NULL
+                  AND (
+                    t.reminder_sent_at IS NOT NULL
+                    OR t.is_completed = true
+                    OR (t.reminder_minutes_before_due IS NULL 
+                        AND (t.custom_fields->>'Reminder' IS NULL 
+                             OR t.custom_fields->>'Reminder' = ''
+                             OR t.custom_fields->>'Reminder' = 'None'))
+                  )
+                ORDER BY t.due_date DESC, t.due_time DESC
+                LIMIT 10
+            `;
+            const debugResult = await client.query(debugQuery);
+            if (debugResult.rows.length > 0) {
+                console.log(`[getTasksDueForReminder] Found ${debugResult.rows.length} task(s) with due_date but excluded from reminders:`, 
+                    debugResult.rows.map(r => ({
+                        id: r.id,
+                        title: r.title,
+                        due_date: r.due_date,
+                        due_time: r.due_time,
+                        reminder_sent_at: r.reminder_sent_at,
+                        is_completed: r.is_completed,
+                        reminder_minutes_before_due: r.reminder_minutes_before_due,
+                        custom_fields_reminder: r.custom_fields?.Reminder || r.custom_fields?.['Reminder']
+                    }))
+                );
+            }
+            
             // Helper function to parse reminder string to minutes
             const parseReminderToMinutes = (reminderValue) => {
                 if (!reminderValue) return null;
@@ -619,6 +709,9 @@ class Task {
             
             // Filter tasks where reminder time has passed
             const now = new Date();
+            console.log(`[getTasksDueForReminder] Current time: ${now.toISOString()} (UTC)`);
+            console.log(`[getTasksDueForReminder] Found ${result.rows.length} task(s) with reminders configured`);
+            
             const processedRows = result.rows.filter(row => {
                 let reminderMinutes = row.reminder_minutes_before_due;
                 
@@ -628,21 +721,80 @@ class Task {
                     reminderMinutes = parseReminderToMinutes(reminderValue);
                 }
                 
-                if (!reminderMinutes || reminderMinutes <= 0) return false;
-                
-                // Calculate reminder time
-                if (!row.due_date) return false;
-                
-                const dueDate = new Date(row.due_date);
-                if (row.due_time) {
-                    const [hours, minutes, seconds] = row.due_time.split(':');
-                    dueDate.setHours(parseInt(hours || 0, 10), parseInt(minutes || 0, 10), parseInt(seconds || 0, 10));
+                if (!reminderMinutes || reminderMinutes <= 0) {
+                    console.log(`[getTasksDueForReminder] Task ${row.id}: Invalid reminder value (${reminderMinutes})`);
+                    return false;
                 }
                 
+                // Calculate reminder time
+                if (!row.due_date) {
+                    console.log(`[getTasksDueForReminder] Task ${row.id}: No due_date`);
+                    return false;
+                }
+                
+                // Parse due_date - handle both date-only and datetime strings
+                // PostgreSQL DATE type is returned as a string "YYYY-MM-DD" (date-only)
+                // PostgreSQL TIMESTAMP is returned as a string with time info
+                let dueDate;
+                const dueDateStr = row.due_date instanceof Date 
+                    ? row.due_date.toISOString().split('T')[0] 
+                    : String(row.due_date);
+                
+                // Check if due_date includes time information
+                const hasTimeInfo = dueDateStr.includes('T') || dueDateStr.includes(' ') || 
+                                   (row.due_date instanceof Date && row.due_date.getHours() !== 0);
+                
+                if (row.due_date instanceof Date) {
+                    // Already a Date object, clone it
+                    dueDate = new Date(row.due_date);
+                } else if (hasTimeInfo) {
+                    // Full datetime string, parse directly
+                    dueDate = new Date(dueDateStr);
+                } else {
+                    // Date-only string (YYYY-MM-DD), create date at midnight UTC
+                    // This ensures consistent timezone handling
+                    dueDate = new Date(dueDateStr + 'T00:00:00Z');
+                }
+                
+                // Handle due_time if provided (separate field from due_date)
+                if (row.due_time) {
+                    const [hours, minutes, seconds] = row.due_time.split(':');
+                    const hour = parseInt(hours || 0, 10);
+                    const min = parseInt(minutes || 0, 10);
+                    const sec = parseInt(seconds || 0, 10);
+                    
+                    // If due_date was date-only (no time info), set time in UTC
+                    // This ensures the time is interpreted consistently regardless of server timezone
+                    if (!hasTimeInfo) {
+                        // Date-only was parsed as UTC midnight, set UTC time
+                        dueDate.setUTCHours(hour, min, sec, 0);
+                    } else {
+                        // Full datetime already has time, but due_time overrides it
+                        // Set in UTC to maintain consistency
+                        dueDate.setUTCHours(hour, min, sec, 0);
+                    }
+                } else if (!hasTimeInfo) {
+                    // No due_time and date-only, ensure we're at midnight UTC
+                    dueDate.setUTCHours(0, 0, 0, 0);
+                }
+                
+                // Calculate reminder time (subtract reminder minutes from due date/time)
                 const reminderTime = new Date(dueDate.getTime() - (reminderMinutes * 60 * 1000));
                 
-                // Check if reminder time has passed
+                // Check if reminder time has passed (compare in UTC)
                 const shouldRemind = reminderTime <= now;
+                
+                // Debug logging for each task
+                console.log(`[getTasksDueForReminder] Task ${row.id} "${row.title}":`, {
+                    due_date_raw: row.due_date,
+                    due_time_raw: row.due_time,
+                    reminder_minutes: reminderMinutes,
+                    due_date_parsed: dueDate.toISOString(),
+                    reminder_time: reminderTime.toISOString(),
+                    current_time: now.toISOString(),
+                    should_remind: shouldRemind,
+                    time_until_reminder: shouldRemind ? 'PAST' : `${Math.round((reminderTime - now) / 60000)} minutes`
+                });
                 
                 if (shouldRemind) {
                     // Set reminder_minutes_before_due for consistency
@@ -651,6 +803,8 @@ class Task {
                 
                 return shouldRemind;
             });
+            
+            console.log(`[getTasksDueForReminder] Returning ${processedRows.length} task(s) due for reminder`);
             
             return processedRows;
         } catch (error) {
@@ -667,6 +821,163 @@ class Task {
                 'UPDATE tasks SET reminder_sent_at = NOW() WHERE id = $1',
                 [taskId]
             );
+        } catch (error) {
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
+
+    // Diagnostic method to check why tasks aren't matching reminder criteria
+    async diagnoseReminderIssues(dueDateFilter = null) {
+        const client = await this.pool.connect();
+        try {
+            let query = `
+                SELECT t.id, t.title, t.due_date, t.due_time, 
+                       t.reminder_minutes_before_due,
+                       t.custom_fields,
+                       t.reminder_sent_at,
+                       t.is_completed,
+                       CASE 
+                           WHEN t.reminder_sent_at IS NOT NULL THEN 'reminder_sent_at is set'
+                           WHEN t.is_completed = true THEN 'task is completed'
+                           WHEN t.due_date IS NULL THEN 'no due_date'
+                           WHEN t.reminder_minutes_before_due IS NULL 
+                                AND (t.custom_fields->>'Reminder' IS NULL 
+                                     OR t.custom_fields->>'Reminder' = ''
+                                     OR t.custom_fields->>'Reminder' = 'None') 
+                           THEN 'no reminder field set'
+                           ELSE 'should match'
+                       END as reason_not_matching
+                FROM tasks t
+                WHERE 1=1
+            `;
+            
+            const params = [];
+            if (dueDateFilter) {
+                // More flexible date matching - check both date and datetime formats
+                query += ` AND (
+                    t.due_date::text LIKE $1 
+                    OR t.due_date::date::text = $1
+                    OR (t.due_date::text LIKE $2 AND t.due_time::text LIKE $3)
+                )`;
+                params.push(`${dueDateFilter}%`, `${dueDateFilter}%`, `%`);
+            } else {
+                // If no filter, only show tasks with due_date
+                query += ` AND t.due_date IS NOT NULL`;
+            }
+            
+            query += ` ORDER BY t.due_date DESC, t.due_time DESC LIMIT 50`;
+            
+            const result = await client.query(query, params);
+            
+            const now = new Date();
+            const diagnostics = result.rows.map(row => {
+                const reminderValue = row.reminder_minutes_before_due || 
+                    (row.custom_fields?.Reminder || row.custom_fields?.['Reminder']);
+                
+                let reminderTime = null;
+                let timeUntilReminder = null;
+                
+                if (row.due_date && reminderValue) {
+                    try {
+                        const dueDateStr = String(row.due_date);
+                        let dueDate = new Date(dueDateStr.includes('T') || dueDateStr.includes(' ') 
+                            ? dueDateStr 
+                            : dueDateStr + 'T00:00:00Z');
+                        
+                        if (row.due_time) {
+                            const [h, m, s] = row.due_time.split(':');
+                            if (!dueDateStr.includes('T') && !dueDateStr.includes(' ')) {
+                                dueDate.setUTCHours(parseInt(h || 0), parseInt(m || 0), parseInt(s || 0), 0);
+                            } else {
+                                dueDate.setHours(parseInt(h || 0), parseInt(m || 0), parseInt(s || 0), 0);
+                            }
+                        }
+                        
+                        const reminderMinutes = typeof reminderValue === 'number' 
+                            ? reminderValue 
+                            : parseInt(String(reminderValue).match(/(\d+)/)?.[1] || '0');
+                        
+                        if (reminderMinutes > 0) {
+                            reminderTime = new Date(dueDate.getTime() - (reminderMinutes * 60 * 1000));
+                            timeUntilReminder = Math.round((reminderTime - now) / 60000);
+                        }
+                    } catch (e) {
+                        // Ignore parsing errors
+                    }
+                }
+                
+                return {
+                    id: row.id,
+                    title: row.title,
+                    due_date: row.due_date,
+                    due_time: row.due_time,
+                    reminder_minutes_before_due: row.reminder_minutes_before_due,
+                    custom_fields_reminder: row.custom_fields?.Reminder || row.custom_fields?.['Reminder'],
+                    reminder_sent_at: row.reminder_sent_at,
+                    is_completed: row.is_completed,
+                    reason_not_matching: row.reason_not_matching,
+                    reminder_time: reminderTime ? reminderTime.toISOString() : null,
+                    time_until_reminder_minutes: timeUntilReminder,
+                    current_time: now.toISOString()
+                };
+            });
+            
+            return diagnostics;
+        } catch (error) {
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
+
+    // Find tasks by specific due date/time (for debugging)
+    async findTasksByDueDateTime(dueDateStr) {
+        const client = await this.pool.connect();
+        try {
+            // Try multiple date formats
+            const queries = [
+                // Exact match with time
+                `SELECT t.*, t.due_date::text as due_date_str, t.due_time::text as due_time_str
+                 FROM tasks t 
+                 WHERE t.due_date::text LIKE $1 
+                 ORDER BY t.id DESC LIMIT 10`,
+                // Date only match
+                `SELECT t.*, t.due_date::text as due_date_str, t.due_time::text as due_time_str
+                 FROM tasks t 
+                 WHERE t.due_date::date::text = $1 
+                 ORDER BY t.id DESC LIMIT 10`,
+                // Match any task with date containing the search string
+                `SELECT t.*, t.due_date::text as due_date_str, t.due_time::text as due_time_str
+                 FROM tasks t 
+                 WHERE t.due_date::text LIKE $2 
+                 ORDER BY t.id DESC LIMIT 10`
+            ];
+
+            const dateOnly = dueDateStr.split('T')[0];
+            const results = [];
+
+            for (const query of queries) {
+                try {
+                    const result = await client.query(query, [
+                        dueDateStr,
+                        `${dateOnly}%`
+                    ]);
+                    if (result.rows.length > 0) {
+                        results.push(...result.rows);
+                    }
+                } catch (e) {
+                    // Continue to next query
+                }
+            }
+
+            // Remove duplicates
+            const uniqueResults = results.filter((task, index, self) =>
+                index === self.findIndex(t => t.id === task.id)
+            );
+
+            return uniqueResults;
         } catch (error) {
             throw error;
         } finally {

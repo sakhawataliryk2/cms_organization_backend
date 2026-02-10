@@ -19,6 +19,7 @@ class TaskController {
         this.markComplete = this.markComplete.bind(this);
         this.markIncomplete = this.markIncomplete.bind(this);
         this.processReminders = this.processReminders.bind(this);
+        this.diagnoseReminders = this.diagnoseReminders.bind(this);
     }
 
     // Initialize database tables
@@ -386,6 +387,41 @@ class TaskController {
                 res.status(500).json(errorResponse);
             }
             throw error;
+        }
+    }
+
+    // Diagnostic endpoint to check why tasks aren't matching reminder criteria
+    async diagnoseReminders(req, res) {
+        try {
+            const { dueDate, searchDate } = req.query; // Optional: filter by due date (e.g., "2026-02-10")
+            console.log(`[diagnoseReminders] Checking reminder diagnostics${dueDate ? ` for date: ${dueDate}` : ''}`);
+            
+            let diagnostics = await this.taskModel.diagnoseReminderIssues(dueDate);
+            
+            // If searchDate is provided, also search for tasks with that exact date/time
+            let searchResults = [];
+            if (searchDate) {
+                console.log(`[diagnoseReminders] Searching for tasks with date/time: ${searchDate}`);
+                searchResults = await this.taskModel.findTasksByDueDateTime(searchDate);
+                console.log(`[diagnoseReminders] Found ${searchResults.length} task(s) matching search date`);
+            }
+            
+            console.log(`[diagnoseReminders] Found ${diagnostics.length} task(s) to analyze`);
+            
+            return res.status(200).json({
+                success: true,
+                message: `Analyzed ${diagnostics.length} task(s)`,
+                current_time: new Date().toISOString(),
+                diagnostics: diagnostics,
+                search_results: searchResults.length > 0 ? searchResults : undefined
+            });
+        } catch (error) {
+            console.error('Error diagnosing reminders:', error);
+            return res.status(500).json({
+                success: false,
+                message: 'Failed to diagnose reminders',
+                error: process.env.NODE_ENV === 'production' ? undefined : error.message
+            });
         }
     }
 
