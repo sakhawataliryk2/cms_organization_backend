@@ -42,6 +42,7 @@ const DeleteRequestController = require("./controllers/deleteRequestController")
 const SharedDocumentController = require("./controllers/sharedDocumentController");
 const BroadcastMessageController = require("./controllers/broadcastMessageController");
 const HeaderConfigController = require("./controllers/headerConfigController");
+const JobXMLController = require("./controllers/jobsXMLController");
 // NEW IMPORTS
 const OfficeController = require("./controllers/officeController");
 const TeamController = require("./controllers/teamController");
@@ -178,7 +179,9 @@ const getAuthController = () => {
   return new AuthController(getPool());
 };
 
-
+const getJobXMLController = () => {
+  return new JobXMLController(getPool());
+};
 
 const getHiringManagerController = () => {
   return new HiringManagerController(getPool());
@@ -299,6 +302,8 @@ app.use(async (req, res, next) => {
             await teamController.initTables();
             const authController = getAuthController();
             await authController.initTables();
+            const jobXMLController = getJobXMLController();
+            await jobXMLController.initTables();
             coreTablesInitialized = true;
             console.log("Core tables (offices, teams, users) initialized.");
           })();
@@ -452,7 +457,7 @@ app.use("/api/auth", sanitizeInputs, (req, res, next) => {
 
 // Setup job XML routes
 app.use("/api/jobs/xml", sanitizeInputs, (req, res, next) => {
-  const router = createJobXMLRouter(getPool());
+  const router = createJobXMLRouter(getJobXMLController());
   router(req, res, next);
 });
 
