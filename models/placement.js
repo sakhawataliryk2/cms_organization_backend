@@ -16,6 +16,7 @@ class Placement {
                     id SERIAL PRIMARY KEY,
                     job_id INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
                     job_seeker_id INTEGER NOT NULL REFERENCES job_seekers(id) ON DELETE CASCADE,
+                    placement_type VARCHAR(50) NOT NULL DEFAULT 'Contract',
                     status VARCHAR(50) NOT NULL DEFAULT 'Pending',
                     start_date DATE NOT NULL,
                     internal_email_notification TEXT,
@@ -38,6 +39,12 @@ class Placement {
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     custom_fields JSONB
                 )
+            `);
+
+            // Add placement_type column if it doesn't exist (for existing installations)
+            await client.query(`
+                ALTER TABLE placements 
+                ADD COLUMN IF NOT EXISTS placement_type VARCHAR(50) DEFAULT 'Contract'
             `);
 
             // Add custom_fields column if it doesn't exist (for existing installations)
@@ -119,6 +126,7 @@ class Placement {
             job_id,
             job_seeker_id,
             organization_id,
+            placement_type,
             status,
             start_date,
             internal_email_notification,
@@ -173,13 +181,13 @@ class Placement {
 
             const insertQuery = `
                 INSERT INTO placements (
-                    job_id, job_seeker_id, organization_id, status, start_date, internal_email_notification,
+                    job_id, job_seeker_id, organization_id, placement_type, status, start_date, internal_email_notification,
                     salary, placement_fee_percent, placement_fee_flat, days_guaranteed,
                     hours_per_day, hours_of_operation,
                     pay_rate, pay_rate_checked, effective_date, effective_date_checked,
                     overtime_exemption, created_by, custom_fields, created_at, updated_at
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, NOW(), NOW())
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, NOW(), NOW())
                 RETURNING *
             `;
 
@@ -187,6 +195,7 @@ class Placement {
                 job_id,
                 job_seeker_id,
                 organization_id || null,
+                placement_type || 'Contract',
                 status || 'Pending',
                 start_date,
                 internal_email_notification || null,
@@ -443,6 +452,7 @@ class Placement {
     async update(id, placementData, userId = null) {
         const {
             organization_id,
+            placement_type,
             status,
             start_date,
             end_date,
@@ -526,6 +536,7 @@ class Placement {
                     UPDATE placements
                     SET 
                         organization_id = COALESCE($1, organization_id),
+                        placement_type = COALESCE($19, placement_type),
                         status = COALESCE($2, status),
                         start_date = COALESCE($3, start_date),
                         end_date = COALESCE($4, end_date),
@@ -564,13 +575,15 @@ class Placement {
                     effective_date_checked,
                     overtime_exemption,
                     customFieldsJson,
-                    id
+                    id,
+                    placement_type
                 ];
             } else {
                 updateQuery = `
                     UPDATE placements
                     SET 
                         organization_id = COALESCE($1, organization_id),
+                        placement_type = COALESCE($18, placement_type),
                         status = COALESCE($2, status),
                         start_date = COALESCE($3, start_date),
                         end_date = COALESCE($4, end_date),
@@ -607,7 +620,8 @@ class Placement {
                     effective_date,
                     effective_date_checked,
                     overtime_exemption,
-                    id
+                    id,
+                    placement_type
                 ];
             }
 

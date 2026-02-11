@@ -53,6 +53,7 @@ const createOnboardingRouter = require("./routes/onboardingRoutes");
 const createAuthRouter = require("./routes/authRoutes");
 const { createOrganizationRouter, createTransferRouter, createDeleteRequestRouter } = require("./routes/organizationRoutes");
 const createJobRouter = require("./routes/jobRoutes");
+const createJobXMLRouter = require("./routes/jobXMLRoutes");
 const createJobSeekerRouter = require("./routes/jobSeekerRoutes");
 const createHiringManagerRouter = require("./routes/hiringManagerRoutes");
 const createHiringManagerTransferRouter = require("./routes/hiringManagerTransferRoutes");
@@ -176,6 +177,8 @@ const getPool = () => {
 const getAuthController = () => {
   return new AuthController(getPool());
 };
+
+
 
 const getHiringManagerController = () => {
   return new HiringManagerController(getPool());
@@ -444,6 +447,12 @@ app.use(async (req, res, next) => {
 // Setup routes with lazy controller initialization
 app.use("/api/auth", sanitizeInputs, (req, res, next) => {
   const router = createAuthRouter(getAuthController());
+  router(req, res, next);
+});
+
+// Setup job XML routes
+app.use("/api/jobs/xml", sanitizeInputs, (req, res, next) => {
+  const router = createJobXMLRouter(getPool());
   router(req, res, next);
 });
 
