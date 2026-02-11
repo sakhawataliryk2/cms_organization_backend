@@ -1,6 +1,6 @@
 // controllers/transferController.js
 const Transfer = require("../models/transfer");
-const Organization = require("../models/Organization");
+const Organization = require("../models/organization");
 const Document = require("../models/document");
 const EmailTemplateModel = require("../models/emailTemplateModel");
 const { renderTemplate } = require("../utils/templateRenderer");

@@ -1,5 +1,5 @@
 const DeleteRequest = require("../models/deleteRequest");
-const Organization = require("../models/Organization");
+const Organization = require("../models/organization");
 const HiringManager = require("../models/hiringManager");
 const JobSeeker = require("../models/jobseeker");
 const EmailTemplateModel = require("../models/emailTemplateModel");
