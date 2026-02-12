@@ -100,7 +100,7 @@ app.use(helmet());
 // Compression to reduce payload size
 app.use(compression());
 
-// Enable CORS with specific options
+// Enable CORS with specifi
 const allowedOrigins = [
   'http://localhost:3000',  // Local development
   'https://ats-orcin.vercel.app',  // Production frontend
