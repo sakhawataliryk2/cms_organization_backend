@@ -2,6 +2,10 @@ const DeleteRequest = require("../models/deleteRequest");
 const Organization = require("../models/organization");
 const HiringManager = require("../models/hiringManager");
 const JobSeeker = require("../models/jobseeker");
+const Job = require("../models/job");
+const Lead = require("../models/lead");
+const Task = require("../models/task");
+const Placement = require("../models/placement");
 const EmailTemplateModel = require("../models/emailTemplateModel");
 const { renderTemplate } = require("../utils/templateRenderer");
 const { sendMail } = require("../services/emailService");
@@ -16,11 +20,16 @@ class DeleteRequestController {
     this.organizationModel = new Organization(pool);
     this.hiringManagerModel = new HiringManager(pool);
     this.jobSeekerModel = new JobSeeker(pool);
+    this.jobModel = new Job(pool);
+    this.leadModel = new Lead(pool);
+    this.taskModel = new Task(pool);
+    this.placementModel = new Placement(pool);
     this.emailTemplateModel = new EmailTemplateModel(pool);
     this.create = this.create.bind(this);
     this.approve = this.approve.bind(this);
     this.deny = this.deny.bind(this);
     this.getByRecord = this.getByRecord.bind(this);
+    this.getById = this.getById.bind(this);
   }
 
   async initTables() {
@@ -113,6 +122,14 @@ class DeleteRequestController {
       recordPath = "hiring-managers";
     } else if (deleteRequest.record_type === "job_seeker") {
       recordPath = "job-seekers";
+    } else if (deleteRequest.record_type === "job") {
+      recordPath = "jobs";
+    } else if (deleteRequest.record_type === "lead") {
+      recordPath = "leads";
+    } else if (deleteRequest.record_type === "task") {
+      recordPath = "tasks";
+    } else if (deleteRequest.record_type === "placement") {
+      recordPath = "placements";
     }
     const approvalUrl = `${baseUrl}/dashboard/${recordPath}/delete/${deleteRequest.id}/approve`;
     const denyUrl = `${baseUrl}/dashboard/${recordPath}/delete/${deleteRequest.id}/deny`;
@@ -122,6 +139,14 @@ class DeleteRequestController {
       templateType = "HIRING_MANAGER_DELETE_REQUEST";
     } else if (deleteRequest.record_type === "job_seeker") {
       templateType = "JOB_SEEKER_DELETE_REQUEST";
+    } else if (deleteRequest.record_type === "job") {
+      templateType = "JOB_DELETE_REQUEST";
+    } else if (deleteRequest.record_type === "lead") {
+      templateType = "LEAD_DELETE_REQUEST";
+    } else if (deleteRequest.record_type === "task") {
+      templateType = "TASK_DELETE_REQUEST";
+    } else if (deleteRequest.record_type === "placement") {
+      templateType = "PLACEMENT_DELETE_REQUEST";
     }
     const tpl = await this.emailTemplateModel.getTemplateByType(templateType);
 
@@ -190,6 +215,32 @@ class DeleteRequestController {
       const recordType = req.query.record_type || "organization";
 
       const deleteRequest = await this.deleteRequestModel.getByRecord(id, recordType);
+
+      return res.json({
+        success: true,
+        deleteRequest,
+      });
+    } catch (error) {
+      console.error("Error fetching delete request:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to fetch delete request",
+        error: process.env.NODE_ENV === "production" ? undefined : error.message,
+      });
+    }
+  }
+
+  async getById(req, res) {
+    try {
+      const { id } = req.params;
+
+      const deleteRequest = await this.deleteRequestModel.getById(id);
+      if (!deleteRequest) {
+        return res.status(404).json({
+          success: false,
+          message: "Delete request not found",
+        });
+      }
 
       return res.json({
         success: true,
@@ -319,6 +370,30 @@ class DeleteRequestController {
           );
         } else if (deniedRequest.record_type === "job_seeker") {
           await this.jobSeekerModel.addNote(
+            deniedRequest.record_id,
+            `Delete denied: ${denial_reason.trim()}`,
+            userId
+          );
+        } else if (deniedRequest.record_type === "job") {
+          await this.jobModel.addNote(
+            deniedRequest.record_id,
+            `Delete denied: ${denial_reason.trim()}`,
+            userId
+          );
+        } else if (deniedRequest.record_type === "lead") {
+          await this.leadModel.addNote(
+            deniedRequest.record_id,
+            `Delete denied: ${denial_reason.trim()}`,
+            userId
+          );
+        } else if (deniedRequest.record_type === "task") {
+          await this.taskModel.addNote(
+            deniedRequest.record_id,
+            `Delete denied: ${denial_reason.trim()}`,
+            userId
+          );
+        } else if (deniedRequest.record_type === "placement") {
+          await this.placementModel.addNote(
             deniedRequest.record_id,
             `Delete denied: ${denial_reason.trim()}`,
             userId
@@ -501,6 +576,146 @@ class DeleteRequestController {
             "archive_cleanup",
             JSON.stringify({
               job_seeker_id: deleteRequest.record_id,
+              delete_request_id: deleteRequest.id,
+            }),
+          ]
+        );
+      } else if (deleteRequest.record_type === "job") {
+        // Update job status to "Archived" (if status column exists) or mark as deleted
+        await client.query(
+          `
+          UPDATE jobs
+          SET status = 'Archived',
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = $1
+        `,
+          [deleteRequest.record_id]
+        );
+
+        await this.jobModel.addNote(
+          deleteRequest.record_id,
+          "Record archived following payroll approval",
+          deleteRequest.reviewed_by
+        );
+
+        await client.query(
+          `
+          INSERT INTO scheduled_tasks (
+            task_type,
+            task_data,
+            scheduled_for,
+            status
+          ) VALUES ($1, $2::jsonb, CURRENT_TIMESTAMP + INTERVAL '7 days', 'pending')
+        `,
+          [
+            "archive_cleanup",
+            JSON.stringify({
+              job_id: deleteRequest.record_id,
+              delete_request_id: deleteRequest.id,
+            }),
+          ]
+        );
+      } else if (deleteRequest.record_type === "lead") {
+        // Update lead status to "Archived" (if status column exists) or mark as deleted
+        await client.query(
+          `
+          UPDATE leads
+          SET status = 'Archived',
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = $1
+        `,
+          [deleteRequest.record_id]
+        );
+
+        await this.leadModel.addNote(
+          deleteRequest.record_id,
+          "Record archived following payroll approval",
+          deleteRequest.reviewed_by
+        );
+
+        await client.query(
+          `
+          INSERT INTO scheduled_tasks (
+            task_type,
+            task_data,
+            scheduled_for,
+            status
+          ) VALUES ($1, $2::jsonb, CURRENT_TIMESTAMP + INTERVAL '7 days', 'pending')
+        `,
+          [
+            "archive_cleanup",
+            JSON.stringify({
+              lead_id: deleteRequest.record_id,
+              delete_request_id: deleteRequest.id,
+            }),
+          ]
+        );
+      } else if (deleteRequest.record_type === "task") {
+        // Update task status to "Archived" or mark as deleted
+        await client.query(
+          `
+          UPDATE tasks
+          SET status = 'Archived',
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = $1
+        `,
+          [deleteRequest.record_id]
+        );
+
+        await this.taskModel.addNote(
+          deleteRequest.record_id,
+          "Record archived following payroll approval",
+          deleteRequest.reviewed_by
+        );
+
+        await client.query(
+          `
+          INSERT INTO scheduled_tasks (
+            task_type,
+            task_data,
+            scheduled_for,
+            status
+          ) VALUES ($1, $2::jsonb, CURRENT_TIMESTAMP + INTERVAL '7 days', 'pending')
+        `,
+          [
+            "archive_cleanup",
+            JSON.stringify({
+              task_id: deleteRequest.record_id,
+              delete_request_id: deleteRequest.id,
+            }),
+          ]
+        );
+      } else if (deleteRequest.record_type === "placement") {
+        // Update placement status to "Archived" or mark as deleted
+        await client.query(
+          `
+          UPDATE placements
+          SET status = 'Archived',
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = $1
+        `,
+          [deleteRequest.record_id]
+        );
+
+        await this.placementModel.addNote(
+          deleteRequest.record_id,
+          "Record archived following payroll approval",
+          deleteRequest.reviewed_by
+        );
+
+        await client.query(
+          `
+          INSERT INTO scheduled_tasks (
+            task_type,
+            task_data,
+            scheduled_for,
+            status
+          ) VALUES ($1, $2::jsonb, CURRENT_TIMESTAMP + INTERVAL '7 days', 'pending')
+        `,
+          [
+            "archive_cleanup",
+            JSON.stringify({
+              placement_id: deleteRequest.record_id,
               delete_request_id: deleteRequest.id,
             }),
           ]

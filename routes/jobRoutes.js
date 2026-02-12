@@ -55,4 +55,30 @@ function createJobRouter(jobController, authMiddleware) {
     return router;
 }
 
-module.exports = createJobRouter;
+// Delete request routes for jobs - separate router
+function createJobDeleteRequestRouter(deleteRequestController, authMiddleware) {
+    const router = express.Router();
+    const { verifyToken } = authMiddleware;
+
+    // All routes require authentication
+    router.use(verifyToken);
+
+    // Get delete request by ID (for approval/deny pages)
+    router.get('/delete/:id', deleteRequestController.getById);
+
+    // Get delete request for a job
+    router.get('/:id/delete-request', deleteRequestController.getByRecord);
+
+    // Create delete request
+    router.post('/:id/delete-request', deleteRequestController.create);
+
+    // Approve delete request (must come before /:id routes)
+    router.post('/delete/:id/approve', deleteRequestController.approve);
+
+    // Deny delete request (must come before /:id routes)
+    router.post('/delete/:id/deny', deleteRequestController.deny);
+
+    return router;
+}
+
+module.exports = { createJobRouter, createJobDeleteRequestRouter };

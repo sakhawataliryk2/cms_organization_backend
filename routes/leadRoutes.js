@@ -50,4 +50,30 @@ function createLeadRouter(leadController, authMiddleware) {
     return router;
 }
 
-module.exports = createLeadRouter;
+// Delete request routes for leads - separate router
+function createLeadDeleteRequestRouter(deleteRequestController, authMiddleware) {
+    const router = express.Router();
+    const { verifyToken } = authMiddleware;
+
+    // All routes require authentication
+    router.use(verifyToken);
+
+    // Get delete request by ID (for approval/deny pages)
+    router.get('/delete/:id', deleteRequestController.getById);
+
+    // Get delete request for a lead
+    router.get('/:id/delete-request', deleteRequestController.getByRecord);
+
+    // Create delete request
+    router.post('/:id/delete-request', deleteRequestController.create);
+
+    // Approve delete request (must come before /:id routes)
+    router.post('/delete/:id/approve', deleteRequestController.approve);
+
+    // Deny delete request (must come before /:id routes)
+    router.post('/delete/:id/deny', deleteRequestController.deny);
+
+    return router;
+}
+
+module.exports = { createLeadRouter, createLeadDeleteRequestRouter };
