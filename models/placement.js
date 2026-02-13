@@ -4,7 +4,7 @@ class Placement {
         this.pool = pool;
     }
 
-    // Initialize the placements table if it doesn't exist
+    // Initialize the placements  if it doesn't exist
     async initTable() {
         let client;
         try {
