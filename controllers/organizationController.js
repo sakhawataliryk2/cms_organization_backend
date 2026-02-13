@@ -19,6 +19,7 @@ class OrganizationController {
         this.getById = this.getById.bind(this);
         this.getWithApprovedPlacements = this.getWithApprovedPlacements.bind(this);
         this.update = this.update.bind(this);
+        this.bulkUpdate = this.bulkUpdate.bind(this);
         this.delete = this.delete.bind(this);
         // Bind existing methods
         this.addNote = this.addNote.bind(this);
@@ -376,6 +377,103 @@ class OrganizationController {
             res.status(500).json({
                 success: false,
                 message: 'An error occurred while updating the organization',
+                error: process.env.NODE_ENV === 'production' ? undefined : error.message
+            });
+        }
+    }
+
+    // Bulk update organizations
+    async bulkUpdate(req, res) {
+        try {
+            console.log('=== BULK UPDATE REQUEST START ===');
+            console.log('Request body:', JSON.stringify(req.body, null, 2));
+            console.log('User ID:', req.user?.id);
+            console.log('User:', req.user);
+            
+            const { ids, updates } = req.body;
+
+            // Validate input
+            if (!ids || !Array.isArray(ids) || ids.length === 0) {
+                console.error('Validation failed: IDs array is required and must not be empty');
+                return res.status(400).json({
+                    success: false,
+                    message: 'IDs array is required and must not be empty'
+                });
+            }
+
+            if (!updates || typeof updates !== 'object') {
+                console.error('Validation failed: Updates object is required');
+                return res.status(400).json({
+                    success: false,
+                    message: 'Updates object is required'
+                });
+            }
+
+            // Get the current user's ID from the auth middleware
+            const userId = req.user.id;
+            console.log('Processing bulk update for user:', userId);
+            console.log('Organization IDs to update:', ids);
+            console.log('Updates to apply:', JSON.stringify(updates, null, 2));
+
+            const results = {
+                successful: [],
+                failed: [],
+                errors: []
+            };
+
+            // Update each organization
+            for (const id of ids) {
+                try {
+                    console.log(`\n--- Processing organization ${id} ---`);
+                    console.log(`Calling organizationModel.update(${id}, updates, ${userId})`);
+                    console.log(`Updates object:`, JSON.stringify(updates, null, 2));
+                    
+                    const organization = await this.organizationModel.update(id, updates, userId);
+                    
+                    if (organization) {
+                        results.successful.push(id);
+                        console.log(`✅ Successfully updated organization ${id}`);
+                        console.log(`Updated organization data:`, JSON.stringify({
+                            id: organization.id,
+                            name: organization.name,
+                            custom_fields: organization.custom_fields
+                        }, null, 2));
+                    } else {
+                        results.failed.push(id);
+                        results.errors.push({ id, error: 'Organization not found or permission denied' });
+                        console.error(`❌ Failed to update organization ${id}: not found or permission denied`);
+                    }
+                } catch (error) {
+                    results.failed.push(id);
+                    const errorMsg = error.message || 'Unknown error';
+                    const errorStack = error.stack || 'No stack trace';
+                    results.errors.push({ id, error: errorMsg });
+                    console.error(`❌ Error updating organization ${id}:`, errorMsg);
+                    console.error(`Error stack:`, errorStack);
+                    console.error(`Full error object:`, error);
+                }
+            }
+
+            console.log('\n=== BULK UPDATE RESULTS ===');
+            console.log(`Successful: ${results.successful.length}/${ids.length}`);
+            console.log(`Failed: ${results.failed.length}/${ids.length}`);
+            console.log('Results:', JSON.stringify(results, null, 2));
+            console.log('=== BULK UPDATE REQUEST END ===\n');
+
+            res.status(200).json({
+                success: true,
+                message: `Updated ${results.successful.length} of ${ids.length} organizations`,
+                results
+            });
+        } catch (error) {
+            console.error('=== BULK UPDATE FATAL ERROR ===');
+            console.error('Error:', error);
+            console.error('Error message:', error.message);
+            console.error('Error stack:', error.stack);
+            console.error('=== END FATAL ERROR ===');
+            res.status(500).json({
+                success: false,
+                message: 'An error occurred while bulk updating organizations',
                 error: process.env.NODE_ENV === 'production' ? undefined : error.message
             });
         }

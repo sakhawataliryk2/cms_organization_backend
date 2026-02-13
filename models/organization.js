@@ -413,25 +413,42 @@ class Organization {
 
     // Update organization by ID
     async update(id, updateData, userId = null) {
+        console.log(`\n=== ORGANIZATION MODEL UPDATE START ===`);
+        console.log(`Organization ID: ${id}`);
+        console.log(`User ID: ${userId}`);
+        console.log(`Update Data:`, JSON.stringify(updateData, null, 2));
+        
         const client = await this.pool.connect();
         try {
             await client.query('BEGIN');
+            console.log(`Transaction started for org ${id}`);
 
             // First, get the organization to ensure it exists and check permissions
             const getOrgQuery = 'SELECT * FROM organizations WHERE id = $1';
+            console.log(`Fetching organization ${id}...`);
             const orgResult = await client.query(getOrgQuery, [id]);
 
             if (orgResult.rows.length === 0) {
+                console.error(`Organization ${id} not found`);
                 throw new Error('Organization not found');
             }
 
             const organization = orgResult.rows[0];
+            console.log(`Organization found:`, {
+                id: organization.id,
+                name: organization.name,
+                created_by: organization.created_by,
+                custom_fields_type: typeof organization.custom_fields,
+                custom_fields: organization.custom_fields
+            });
 
             if (userId !== null && organization.created_by !== userId) {
+                console.error(`Permission denied: User ${userId} cannot update org ${id} (created by ${organization.created_by})`);
                 throw new Error('You do not have permission to update this organization');
             }
 
             const oldState = { ...organization };
+            console.log(`Old state custom_fields:`, JSON.stringify(oldState.custom_fields, null, 2));
 
             // Build update query dynamically
             const updateFields = [];
@@ -457,43 +474,83 @@ class Organization {
 
             // Handle custom fields merging
             if (updateData.customFields || updateData.custom_fields) {
+                console.log(`\n--- Processing Custom Fields for org ${id} ---`);
                 const customFieldsData = updateData.customFields || updateData.custom_fields;
+                console.log(`Custom fields data received:`, JSON.stringify(customFieldsData, null, 2));
+                console.log(`Custom fields data type:`, typeof customFieldsData);
+                
                 let newCustomFields = {};
+                let existingCustomFields = {};
+                let updateCustomFields = {};
 
                 try {
-                    const existingCustomFields = typeof organization.custom_fields === 'string'
+                    console.log(`Raw organization.custom_fields:`, organization.custom_fields);
+                    console.log(`Raw organization.custom_fields type:`, typeof organization.custom_fields);
+                    
+                    existingCustomFields = typeof organization.custom_fields === 'string'
                         ? JSON.parse(organization.custom_fields || '{}')
                         : (organization.custom_fields || {});
+                    
+                    console.log(`Parsed existingCustomFields:`, JSON.stringify(existingCustomFields, null, 2));
+                    console.log(`Existing custom fields keys:`, Object.keys(existingCustomFields));
 
-                    const updateCustomFields = typeof customFieldsData === 'string'
+                    updateCustomFields = typeof customFieldsData === 'string'
                         ? JSON.parse(customFieldsData)
                         : customFieldsData;
+                    
+                    console.log(`Parsed updateCustomFields:`, JSON.stringify(updateCustomFields, null, 2));
+                    console.log(`Update custom fields keys:`, Object.keys(updateCustomFields));
 
                     // Ensure updateCustomFields is an object, not an integer or other type
                     if (typeof updateCustomFields === 'object' && updateCustomFields !== null && !Array.isArray(updateCustomFields)) {
                         newCustomFields = { ...existingCustomFields, ...updateCustomFields };
+                        console.log(`✅ Merged custom fields successfully`);
                     } else {
-                        console.error("Warning: custom_fields data is not a valid object:", updateCustomFields);
+                        console.error("❌ Warning: custom_fields data is not a valid object:", updateCustomFields);
                         newCustomFields = existingCustomFields; // Keep existing if new data is invalid
                     }
                 } catch (e) {
-                    console.error("Error parsing custom fields:", e);
+                    console.error("❌ Error parsing custom fields:", e);
+                    console.error("Error stack:", e.stack);
+                    // If parsing fails, try to get existing custom fields
+                    try {
+                        existingCustomFields = typeof organization.custom_fields === 'string'
+                            ? JSON.parse(organization.custom_fields || '{}')
+                            : (organization.custom_fields || {});
+                        console.log(`Recovered existingCustomFields:`, JSON.stringify(existingCustomFields, null, 2));
+                    } catch (parseError) {
+                        console.error("Failed to recover existingCustomFields:", parseError);
+                        existingCustomFields = {};
+                    }
+                    
                     // If parsing fails, ensure we still have a valid object
                     if (typeof customFieldsData === 'object' && customFieldsData !== null && !Array.isArray(customFieldsData)) {
-                        newCustomFields = customFieldsData;
+                        newCustomFields = { ...existingCustomFields, ...customFieldsData };
+                        console.log(`✅ Merged after error recovery`);
                     } else {
-                        newCustomFields = {};
+                        newCustomFields = existingCustomFields;
+                        console.log(`Using existing custom fields only`);
                     }
                 }
 
                 // Final validation: ensure newCustomFields is always an object
                 if (typeof newCustomFields !== 'object' || newCustomFields === null || Array.isArray(newCustomFields)) {
-                    console.error("CRITICAL: newCustomFields is not a valid object, using empty object");
+                    console.error("❌ CRITICAL: newCustomFields is not a valid object, using empty object");
                     newCustomFields = {};
                 }
 
+                // Log custom fields update for debugging
+                console.log(`\n--- Custom Fields Summary for org ${id} ---`);
+                console.log(`Final newCustomFields:`, JSON.stringify(newCustomFields, null, 2));
+                console.log(`Final newCustomFields keys:`, Object.keys(newCustomFields));
+                console.log(`Existing custom_fields:`, JSON.stringify(existingCustomFields, null, 2));
+                console.log(`Update custom_fields:`, JSON.stringify(updateCustomFields, null, 2));
+                console.log(`--- End Custom Fields Summary ---\n`);
+
                 updateFields.push(`custom_fields = $${paramCount}`);
-                queryParams.push(newCustomFields); // DB JSONB me directly save ho jayega
+                // PostgreSQL JSONB accepts JavaScript objects directly via node-postgres
+                queryParams.push(newCustomFields);
+                console.log(`Added custom_fields to update query (param ${paramCount})`);
                 paramCount++;
 
                 // Remove from further processing
@@ -592,8 +649,21 @@ class Organization {
             console.log('Query params:', JSON.stringify(queryParams, null, 2));
             console.log('Update data received:', JSON.stringify(updateData, null, 2));
 
+            console.log(`\n--- Executing UPDATE query for org ${id} ---`);
+            console.log(`Query:`, updateQuery);
+            console.log(`Params count:`, queryParams.length);
+            console.log(`Params:`, JSON.stringify(queryParams, null, 2));
+            
             const result = await client.query(updateQuery, queryParams);
             const updatedOrganization = result.rows[0];
+            
+            console.log(`✅ Query executed successfully`);
+            console.log(`Updated organization:`, {
+                id: updatedOrganization.id,
+                name: updatedOrganization.name,
+                custom_fields_type: typeof updatedOrganization.custom_fields,
+                custom_fields: updatedOrganization.custom_fields
+            });
 
             // Add history entry
             const historyQuery = `
@@ -616,18 +686,32 @@ class Organization {
                 userId || organization.created_by
             ];
 
+            console.log(`Adding history entry...`);
             await client.query(historyQuery, historyValues);
 
+            console.log(`Committing transaction...`);
             await client.query('COMMIT');
+            console.log(`✅ Transaction committed successfully`);
 
-            console.log("Organization updated successfully:", updatedOrganization);
+            console.log(`=== ORGANIZATION MODEL UPDATE END (SUCCESS) ===\n`);
+            return updatedOrganization;
             return updatedOrganization;
         } catch (error) {
-            await client.query('ROLLBACK');
-            console.error("Error updating organization:", error);
+            console.error(`\n❌ ERROR in organization model update for org ${id}`);
+            console.error(`Error message:`, error.message);
+            console.error(`Error stack:`, error.stack);
+            console.error(`Full error:`, error);
+            try {
+                await client.query('ROLLBACK');
+                console.log(`Transaction rolled back`);
+            } catch (rollbackError) {
+                console.error(`Failed to rollback:`, rollbackError);
+            }
+            console.log(`=== ORGANIZATION MODEL UPDATE END (ERROR) ===\n`);
             throw error;
         } finally {
             client.release();
+            console.log(`Database connection released`);
         }
     }
 

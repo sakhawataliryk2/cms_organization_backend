@@ -26,6 +26,9 @@ function createOrganizationRouter(organizationController, authMiddleware) {
     // Create new organization
     router.post('/', organizationController.create);
 
+    // Bulk update organizations
+    router.post('/bulk-update', organizationController.bulkUpdate);
+
     // Update organization by ID 
     // (admins can update any, regular users only their own)
     router.put('/:id', organizationController.update);
