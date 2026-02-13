@@ -43,6 +43,7 @@ const SharedDocumentController = require("./controllers/sharedDocumentController
 const BroadcastMessageController = require("./controllers/broadcastMessageController");
 const HeaderConfigController = require("./controllers/headerConfigController");
 const JobXMLController = require("./controllers/jobsXMLController");
+const AppointmentController = require("./controllers/appointmentController");
 // NEW IMPORTS
 const OfficeController = require("./controllers/officeController");
 const TeamController = require("./controllers/teamController");
@@ -69,6 +70,7 @@ const createAdminDocumentRouter = require("./routes/adminDocumentRoutes");
 const createSharedDocumentRouter = require("./routes/sharedDocumentRoutes");
 const createBroadcastMessageRouter = require("./routes/broadcastMessageRoutes");
 const createHeaderConfigRouter = require("./routes/headerConfigRoutes");
+const { createAppointmentRouter, createZoomWebhookRouter } = require("./routes/appointmentRoutes");
 // NEW ROUTE IMPORTS
 const createOfficeRouter = require("./routes/officeRoutes");
 const createTeamRouter = require("./routes/teamRoutes");
@@ -133,6 +135,7 @@ try {
 }
 
 // Parse request bodies with increased limits
+// Note: Zoom webhook needs raw body for signature verification, so it's handled separately
 app.use(bodyParser.json({ limit: "1mb" }));
 app.use(bodyParser.urlencoded({ extended: false, limit: "1mb" }));
 app.use(
@@ -269,6 +272,10 @@ const getOnboardingController = () => {
 };
 const getEmailTemplateController = () => {
   return new EmailTemplateController(getPool());
+};
+
+const getAppointmentController = () => {
+  return new AppointmentController(getPool());
 };
 
 
@@ -441,6 +448,20 @@ app.use(async (req, res, next) => {
       if (req.path.startsWith("/api/email-templates")) {
         const emailTemplateController = new EmailTemplateController(getPool());
         await emailTemplateController.initTables();
+      }
+      // Initialize appointment tables
+      if (req.path.startsWith("/api/appointments") || req.path.startsWith("/api/planner/appointments") || req.path.startsWith("/api/zoom")) {
+        try {
+          const appointmentController = getAppointmentController();
+          console.log("🔄 Initializing appointment tables for path:", req.path);
+          await appointmentController.initTables();
+          console.log("✅ Appointment tables initialization completed for path:", req.path);
+        } catch (appointmentError) {
+          console.error("❌ Failed to initialize appointment tables:", appointmentError);
+          console.error("Error details:", appointmentError.message);
+          console.error("Error stack:", appointmentError.stack);
+          // Don't throw - let the route handle the error, but log it clearly
+        }
       }
     } catch (error) {
       console.error("Failed to initialize tables:", error.message);
@@ -721,7 +742,25 @@ app.use("/api/email-templates", sanitizeInputs, (req, res, next) => {
   router(req, res, next);
 });
 
+// Setup appointment routes with authentication
+app.use("/api/appointments", sanitizeInputs, (req, res, next) => {
+  const authMiddleware = { verifyToken: verifyToken(getPool()), checkRole };
+  const router = createAppointmentRouter(getAppointmentController(), authMiddleware);
+  router(req, res, next);
+});
 
+// Setup planner appointment routes (for frontend compatibility)
+app.use("/api/planner/appointments", sanitizeInputs, (req, res, next) => {
+  const authMiddleware = { verifyToken: verifyToken(getPool()), checkRole };
+  const router = createAppointmentRouter(getAppointmentController(), authMiddleware);
+  router(req, res, next);
+});
+
+// Setup Zoom webhook route (no authentication, uses signature verification)
+app.use("/api/zoom", sanitizeInputs, (req, res, next) => {
+  const router = createZoomWebhookRouter(getAppointmentController());
+  router(req, res, next);
+});
 
 // Setup scrape routes with authentication
 app.use("/api/scrape", sanitizeInputs, (req, res, next) => {
@@ -744,6 +783,22 @@ app.get("/test-db", async (req, res) => {
   } catch (err) {
     console.error("Database query error:", err);
     res.status(500).json({ success: false, error: "Database error" });
+  }
+});
+
+// Manual appointment table initialization endpoint (for testing)
+app.get("/api/appointments/init", async (req, res) => {
+  try {
+    const appointmentController = getAppointmentController();
+    await appointmentController.initTables();
+    res.json({ success: true, message: "Appointment tables initialized successfully" });
+  } catch (error) {
+    console.error("Error initializing appointment tables:", error);
+    res.status(500).json({ 
+      success: false, 
+      message: "Failed to initialize appointment tables",
+      error: error.message 
+    });
   }
 });
 
