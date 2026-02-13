@@ -47,13 +47,65 @@ class DeleteRequestController {
       }
 
       const { id } = req.params; // organization ID
-      const { reason, record_type, record_number, requested_by, requested_by_email } = req.body;
+      const { 
+        reason, 
+        record_type, 
+        record_number, 
+        requested_by, 
+        requested_by_email,
+        action_type = 'standard',
+        dependencies_summary = null,
+        user_consent = false
+      } = req.body;
 
       if (!reason || !reason.trim()) {
         return res.status(400).json({
           success: false,
           message: "Reason for deletion is required",
         });
+      }
+
+      // Validate action_type
+      if (action_type !== 'standard' && action_type !== 'cascade') {
+        return res.status(400).json({
+          success: false,
+          message: "action_type must be either 'standard' or 'cascade'",
+        });
+      }
+
+      // If cascade deletion, validate dependencies_summary and user_consent
+      if (action_type === 'cascade') {
+        if (!dependencies_summary || typeof dependencies_summary !== 'object') {
+          return res.status(400).json({
+            success: false,
+            message: "dependencies_summary is required for cascade deletion",
+          });
+        }
+        if (!user_consent) {
+          return res.status(400).json({
+            success: false,
+            message: "User consent is required for cascade deletion",
+          });
+        }
+      }
+
+      // For standard deletion, check if dependencies exist and force cascade if they do
+      if (action_type === 'standard' && record_type === 'organization') {
+        const dependencyCounts = await this.organizationModel.getDependencyCounts(id);
+        const hasDependencies = (
+          (dependencyCounts.hiring_managers > 0) ||
+          (dependencyCounts.jobs > 0) ||
+          (dependencyCounts.placements > 0) ||
+          (dependencyCounts.child_organizations > 0)
+        );
+        
+        if (hasDependencies) {
+          return res.status(400).json({
+            success: false,
+            message: "This organization has linked records. Please use cascade deletion or transfer records first.",
+            dependencyCounts,
+          });
+        }
       }
 
       // Check if there's already a pending request
@@ -87,6 +139,9 @@ class DeleteRequestController {
         requested_by_name: requested_by || user.name || "Unknown",
         requested_by_email: requested_by_email || user.email || "",
         reason: reason.trim(),
+        action_type,
+        dependencies_summary,
+        user_consent,
       });
 
       // Send email notification to payroll
@@ -157,6 +212,9 @@ class DeleteRequestController {
       `<a href="${denyUrl}" style="display:inline-block;background-color:#f44336;color:white;padding:10px 20px;text-decoration:none;border-radius:5px;">Deny Deletion</a>`;
 
     const recordDisplay = String(deleteRequest.record_number || deleteRequest.record_id);
+    const isCascade = deleteRequest.action_type === 'cascade';
+    const dependencies = deleteRequest.dependencies_summary || {};
+    
     const vars = {
       requestedBy: requester.name || "Unknown",
       requestedByEmail: requester.email || "",
@@ -167,6 +225,9 @@ class DeleteRequestController {
       requestDate,
       approvalUrl,
       denyUrl,
+      isCascade: isCascade ? 'true' : 'false',
+      cascadeWarning: isCascade ? '⚠️ CASCADE DELETION REQUEST - This will delete the organization AND all linked records.' : '',
+      dependenciesList: isCascade ? this.formatDependenciesList(dependencies) : '',
     };
     const bodyVars = {
       ...vars,
@@ -185,23 +246,40 @@ class DeleteRequestController {
         html,
       });
     } else {
+      const subjectPrefix = isCascade ? '⚠️ Cascade Deletion Request: ' : 'Delete Request: ';
+      const cascadeSection = isCascade ? `
+        <div style="background-color: #fee; border: 2px solid #f44; padding: 15px; margin: 15px 0; border-radius: 5px;">
+          <h3 style="color: #c00; margin-top: 0;">⚠️ CASCADE DELETION WARNING</h3>
+          <p style="color: #800; font-weight: bold;">This request will delete the organization AND the following linked records:</p>
+          <ul style="color: #800;">
+            ${dependencies.hiring_managers > 0 ? `<li><strong>${dependencies.hiring_managers}</strong> Hiring Managers</li>` : ''}
+            ${dependencies.jobs > 0 ? `<li><strong>${dependencies.jobs}</strong> Jobs</li>` : ''}
+            ${dependencies.placements > 0 ? `<li><strong>${dependencies.placements}</strong> Placements</li>` : ''}
+            ${dependencies.child_organizations > 0 ? `<li><strong>${dependencies.child_organizations}</strong> Child Organizations</li>` : ''}
+          </ul>
+          <p style="color: #800; font-weight: bold;">User has explicitly consented to this cascade deletion.</p>
+        </div>
+      ` : '';
+      
       await sendMail({
         to: PAYROLL_EMAIL,
-        subject: `Delete Request: ${deleteRequest.record_type} ${recordDisplay}`,
+        subject: `${subjectPrefix}${deleteRequest.record_type} ${recordDisplay}`,
         html: `
-          <h2>Delete Request</h2>
-          <p>A new organization delete request has been submitted and requires your review.</p>
+          <h2>${isCascade ? '⚠️ Cascade ' : ''}Delete Request</h2>
+          <p>A new ${deleteRequest.record_type} delete request has been submitted and requires your review.</p>
+          ${cascadeSection}
           <p><strong>Request Details:</strong></p>
           <ul>
             <li><strong>Request ID:</strong> ${vars.requestId} (this ID is used in the approval link)</li>
-            <li><strong>Record (Organization):</strong> ${recordDisplay}</li>
+            <li><strong>Record (${deleteRequest.record_type}):</strong> ${recordDisplay}</li>
+            <li><strong>Request Type:</strong> ${isCascade ? 'Cascade Deletion' : 'Standard Deletion'}</li>
             <li><strong>Requested By:</strong> ${vars.requestedBy} (${vars.requestedByEmail})</li>
             <li><strong>Request Date:</strong> ${requestDate}</li>
             <li><strong>Reason:</strong> ${vars.reason}</li>
           </ul>
           <p>Please review the request and take the appropriate action using the links below:</p>
           <p>
-            <a href="${approvalUrl}" style="background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin-right: 10px;">Approve Deletion</a>
+            <a href="${approvalUrl}" style="background-color: ${isCascade ? '#c00' : '#4CAF50'}; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin-right: 10px;">${isCascade ? 'Approve Cascade Deletion' : 'Approve Deletion'}</a>
             <a href="${denyUrl}" style="background-color: #f44336; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Deny Deletion</a>
           </p>
         `,
@@ -461,31 +539,150 @@ class DeleteRequestController {
     });
   }
 
+  formatDependenciesList(dependencies) {
+    const items = [];
+    if (dependencies.hiring_managers > 0) {
+      items.push(`${dependencies.hiring_managers} Hiring Managers`);
+    }
+    if (dependencies.jobs > 0) {
+      items.push(`${dependencies.jobs} Jobs`);
+    }
+    if (dependencies.placements > 0) {
+      items.push(`${dependencies.placements} Placements`);
+    }
+    if (dependencies.child_organizations > 0) {
+      items.push(`${dependencies.child_organizations} Child Organizations`);
+    }
+    return items.length > 0 ? items.join(', ') : 'None';
+  }
+
   async executeDeletion(deleteRequest) {
     const client = await this.organizationModel.pool.connect();
     try {
       await client.query("BEGIN");
 
       if (deleteRequest.record_type === "organization") {
-        // Update organization status to "Archived" and set archive_reason for Deletion
-        await client.query(
-          `
-          UPDATE organizations
-          SET status = 'Archived',
-              archived_at = CURRENT_TIMESTAMP,
-              archive_reason = 'Deletion',
-              updated_at = CURRENT_TIMESTAMP
-          WHERE id = $1
-        `,
-          [deleteRequest.record_id]
-        );
+        // Check if this is a cascade deletion
+        const isCascade = deleteRequest.action_type === 'cascade';
+        
+        if (isCascade) {
+          // Get child organizations before archiving
+          const childOrgsQuery = await client.query(
+            `
+            SELECT id FROM organizations 
+            WHERE (parent_organization = $1 OR parent_organization = $2) 
+            AND status != 'Archived' 
+            AND id != $1
+            `,
+            [deleteRequest.record_id, String(deleteRequest.record_id)]
+          );
+          const childOrgIds = childOrgsQuery.rows.map(row => row.id);
 
-        // Add system note
-        await this.organizationModel.addNote(
-          deleteRequest.record_id,
-          "Record archived following payroll approval",
-          deleteRequest.reviewed_by
-        );
+          // Use archiveCascade method to archive org and all dependencies
+          await this.organizationModel.archiveCascade(
+            deleteRequest.record_id,
+            deleteRequest.reviewed_by,
+            'Cascade Deletion'
+          );
+
+          // Add system note
+          await this.organizationModel.addNote(
+            deleteRequest.record_id,
+            "Organization and all linked records archived following payroll approval (Cascade Deletion)",
+            deleteRequest.reviewed_by
+          );
+
+          // Auto-approve pending delete requests for child organizations
+          if (childOrgIds.length > 0) {
+            for (const childOrgId of childOrgIds) {
+              try {
+                const childDeleteRequest = await this.deleteRequestModel.getByRecord(
+                  childOrgId,
+                  'organization'
+                );
+                
+                if (childDeleteRequest && childDeleteRequest.status === 'pending') {
+                  console.log(`Auto-approving child organization delete request: ${childDeleteRequest.id}`);
+                  
+                  // Approve the child delete request
+                  const approvedChildRequest = await this.deleteRequestModel.approve(
+                    childDeleteRequest.id,
+                    deleteRequest.reviewed_by
+                  );
+
+                  // Execute deletion for child (standard archive since parent cascade handles dependencies)
+                  await client.query(
+                    `
+                    UPDATE organizations
+                    SET status = 'Archived',
+                        archived_at = CURRENT_TIMESTAMP,
+                        archive_reason = 'Deletion',
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = $1
+                  `,
+                    [childOrgId]
+                  );
+
+                  // Add system note to child org
+                  await this.organizationModel.addNote(
+                    childOrgId,
+                    `Record archived following auto-approval (parent organization cascade deletion approved)`,
+                    deleteRequest.reviewed_by
+                  );
+
+                  // Schedule cleanup job for child org
+                  await client.query(
+                    `
+                    INSERT INTO scheduled_tasks (
+                      task_type,
+                      task_data,
+                      scheduled_for,
+                      status
+                    ) VALUES ($1, $2::jsonb, CURRENT_TIMESTAMP + INTERVAL '7 days', 'pending')
+                  `,
+                    [
+                      "archive_cleanup",
+                      JSON.stringify({
+                        organization_id: childOrgId,
+                        delete_request_id: approvedChildRequest.id,
+                      }),
+                    ]
+                  );
+
+                  // Send approval email for child org deletion
+                  try {
+                    await this.sendApprovalEmail(approvedChildRequest);
+                  } catch (emailError) {
+                    console.error(`Error sending approval email for child org ${childOrgId}:`, emailError);
+                  }
+                }
+              } catch (childError) {
+                console.error(`Error auto-approving child organization ${childOrgId}:`, childError);
+                // Continue with other child orgs even if one fails
+              }
+            }
+          }
+        } else {
+          // Standard deletion - only archive the organization
+          await client.query(
+            `
+            UPDATE organizations
+            SET status = 'Archived',
+                archived_at = CURRENT_TIMESTAMP,
+                archive_reason = 'Deletion',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = $1
+          `,
+            [deleteRequest.record_id]
+          );
+
+          // Add system note
+          await this.organizationModel.addNote(
+            deleteRequest.record_id,
+            "Record archived following payroll approval",
+            deleteRequest.reviewed_by
+          );
+        }
 
         // Schedule cleanup job (7 days from now)
         await client.query(

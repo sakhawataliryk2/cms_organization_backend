@@ -21,9 +21,37 @@ class DeleteRequest {
           denial_reason TEXT,
           reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
           reviewed_at TIMESTAMP,
+          action_type VARCHAR(50) DEFAULT 'standard',
+          dependencies_summary JSONB,
+          user_consent BOOLEAN DEFAULT false,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
+      `);
+
+      // Add new columns if they don't exist (for existing tables)
+      await client.query(`
+        DO $$ 
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_name='delete_requests' AND column_name='action_type'
+          ) THEN
+            ALTER TABLE delete_requests ADD COLUMN action_type VARCHAR(50) DEFAULT 'standard';
+          END IF;
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_name='delete_requests' AND column_name='dependencies_summary'
+          ) THEN
+            ALTER TABLE delete_requests ADD COLUMN dependencies_summary JSONB;
+          END IF;
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_name='delete_requests' AND column_name='user_consent'
+          ) THEN
+            ALTER TABLE delete_requests ADD COLUMN user_consent BOOLEAN DEFAULT false;
+          END IF;
+        END $$;
       `);
 
       // Create indexes for faster lookups
@@ -52,6 +80,9 @@ class DeleteRequest {
         requested_by_name,
         requested_by_email,
         reason,
+        action_type = 'standard',
+        dependencies_summary = null,
+        user_consent = false,
       } = deleteRequestData;
 
       const result = await client.query(
@@ -64,8 +95,11 @@ class DeleteRequest {
           requested_by_name,
           requested_by_email,
           reason,
+          action_type,
+          dependencies_summary,
+          user_consent,
           status
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending')
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending')
         RETURNING *
       `,
         [
@@ -76,6 +110,9 @@ class DeleteRequest {
           requested_by_name || null,
           requested_by_email || null,
           reason,
+          action_type,
+          dependencies_summary ? JSON.stringify(dependencies_summary) : null,
+          user_consent,
         ]
       );
 

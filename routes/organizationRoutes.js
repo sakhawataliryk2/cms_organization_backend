@@ -16,6 +16,9 @@ function createOrganizationRouter(organizationController, authMiddleware) {
     // Get organizations that have at least one placement with status = 'Approved' (for TBI)
     router.get('/with-approved-placements', organizationController.getWithApprovedPlacements);
 
+    // Get dependency counts for an organization (must be before /:id route)
+    router.get('/:id/dependencies', organizationController.getDependencies);
+
     // Get organization by ID 
     // (admins can see any, regular users only their own)
     router.get('/:id', organizationController.getById);

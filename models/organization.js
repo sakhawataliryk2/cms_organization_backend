@@ -808,51 +808,100 @@ class Organization {
         }
     }
 
-    // Get dependency counts for an organization
+    // Get dependency counts and detailed records for an organization
     async getDependencyCounts(id) {
         const client = await this.pool.connect();
         try {
-            // Count Hiring Managers
+            // Get Hiring Managers (includes both directly created and transferred)
             const hmQuery = await client.query(
-                'SELECT COUNT(*) FROM hiring_managers WHERE organization_id = $1 AND status != \'Archived\'',
+                `SELECT id, first_name, last_name, email, title, created_at 
+                 FROM hiring_managers 
+                 WHERE organization_id = $1 AND status != 'Archived'
+                 ORDER BY created_at DESC`,
                 [id]
             );
 
-            // Count Jobs
+            // Get Jobs (includes both directly created and transferred)
             const jobQuery = await client.query(
-                'SELECT COUNT(*) FROM jobs WHERE organization_id = $1 AND status != \'Archived\'',
+                `SELECT id, job_title, created_at 
+                 FROM jobs 
+                 WHERE organization_id = $1 AND status != 'Archived'
+                 ORDER BY created_at DESC`,
                 [id]
             );
 
-            // Count Placements (linked via jobs)
+            // Get Placements (linked via jobs, includes both directly created and transferred)
             const placementQuery = await client.query(
-                `SELECT COUNT(p.id) 
+                `SELECT p.id, p.job_seeker_id, p.job_id, 
+                        js.first_name as job_seeker_first_name, js.last_name as job_seeker_last_name,
+                        j.job_title, p.created_at
                  FROM placements p
                  JOIN jobs j ON p.job_id = j.id
-                 WHERE j.organization_id = $1 AND p.status != 'Archived'`,
+                 LEFT JOIN job_seekers js ON p.job_seeker_id = js.id
+                 WHERE j.organization_id = $1 AND p.status != 'Archived'
+                 ORDER BY p.created_at DESC`,
                 [id]
             );
 
-            // Count Child Organizations
+            // Get Child Organizations
             const childOrgQuery = await client.query(
-                'SELECT COUNT(*) FROM organizations WHERE parent_organization = $1 AND status != \'Archived\'',
-                [String(id)] // Ensure string comparison if parent_organization is stored as string
+                `SELECT id, name, created_at 
+                 FROM organizations 
+                 WHERE (parent_organization = $1 OR parent_organization = $2) 
+                 AND status != 'Archived' 
+                 AND id != $1
+                 ORDER BY created_at DESC`,
+                [id, String(id)]
             );
 
-            // Check for numeric parent_organization storage as well just in case
-            const childOrgNumericQuery = await client.query(
-                'SELECT COUNT(*) FROM organizations WHERE parent_organization = $1 AND status != \'Archived\'',
-                [id]
-            );
+            // Format hiring managers
+            const hiringManagers = hmQuery.rows.map(hm => ({
+                id: hm.id,
+                name: `${hm.first_name || ''} ${hm.last_name || ''}`.trim() || 'Unnamed',
+                email: hm.email || null,
+                title: hm.title || null,
+                type: 'hiring_manager'
+            }));
+
+            // Format jobs
+            const jobs = jobQuery.rows.map(job => ({
+                id: job.id,
+                name: job.job_title || 'Untitled',
+                type: 'job'
+            }));
+
+            // Format placements
+            const placements = placementQuery.rows.map(placement => {
+                const jobSeekerName = placement.job_seeker_first_name || placement.job_seeker_last_name
+                    ? `${placement.job_seeker_first_name || ''} ${placement.job_seeker_last_name || ''}`.trim()
+                    : 'Unnamed';
+                return {
+                    id: placement.id,
+                    name: `${jobSeekerName} - ${placement.job_title || 'Untitled'}`,
+                    job_seeker_id: placement.job_seeker_id,
+                    job_id: placement.job_id,
+                    type: 'placement'
+                };
+            });
+
+            // Format child organizations
+            const childOrganizations = childOrgQuery.rows.map(org => ({
+                id: org.id,
+                name: org.name || 'Unnamed',
+                type: 'organization'
+            }));
 
             return {
-                hiring_managers: parseInt(hmQuery.rows[0].count),
-                jobs: parseInt(jobQuery.rows[0].count),
-                placements: parseInt(placementQuery.rows[0].count),
-                child_organizations: Math.max(
-                    parseInt(childOrgQuery.rows[0].count),
-                    parseInt(childOrgNumericQuery.rows[0].count)
-                )
+                hiring_managers: hiringManagers.length,
+                jobs: jobs.length,
+                placements: placements.length,
+                child_organizations: childOrganizations.length,
+                details: {
+                    hiring_managers,
+                    jobs,
+                    placements,
+                    child_organizations
+                }
             };
         } catch (error) {
             console.error('Error getting dependency counts:', error);
