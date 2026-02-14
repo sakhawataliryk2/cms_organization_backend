@@ -55,6 +55,8 @@ class JobSeeker {
                     job_seeker_id INTEGER NOT NULL REFERENCES job_seekers(id) ON DELETE CASCADE,
                     text TEXT NOT NULL,
                     note_type VARCHAR(255) DEFAULT 'General Note',
+                    action VARCHAR(255),
+                    about_references JSONB,
                     created_by INTEGER REFERENCES users(id),
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
@@ -63,6 +65,34 @@ class JobSeeker {
             await client.query(`
                 ALTER TABLE job_seeker_notes ADD COLUMN IF NOT EXISTS note_type VARCHAR(255) DEFAULT 'General Note'
             `);
+            // Add action and about_references columns if they don't exist (for existing tables)
+            try {
+                const actionColumnCheck = await client.query(`
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_schema='public' AND table_name='job_seeker_notes' AND column_name='action'
+                `);
+                if (actionColumnCheck.rows.length === 0) {
+                    await client.query(`ALTER TABLE job_seeker_notes ADD COLUMN action VARCHAR(255)`);
+                    console.log('✅ Migration: Added action column to job_seeker_notes');
+                }
+            } catch (err) {
+                console.error('Error checking/adding action column:', err.message);
+            }
+            
+            try {
+                const aboutRefColumnCheck = await client.query(`
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_schema='public' AND table_name='job_seeker_notes' AND column_name='about_references'
+                `);
+                if (aboutRefColumnCheck.rows.length === 0) {
+                    await client.query(`ALTER TABLE job_seeker_notes ADD COLUMN about_references JSONB`);
+                    console.log('✅ Migration: Added about_references column to job_seeker_notes');
+                }
+            } catch (err) {
+                console.error('Error checking/adding about_references column:', err.message);
+            }
 
             // Create a table for job seeker history
             await client.query(`
@@ -624,19 +654,45 @@ class JobSeeker {
     // Add this new method to the JobSeeker class in models/jobseeker.js
 
     // Add a note to a job seeker and automatically update last contact date
-    async addNoteAndUpdateContact(jobSeekerId, text, userId, noteType = 'General Note') {
+    async addNoteAndUpdateContact(jobSeekerId, text, userId, noteType = 'General Note', action = null, aboutReferences = null) {
         const client = await this.pool.connect();
         try {
             await client.query('BEGIN');
 
-            // Insert the note with note_type
+            // Handle about_references - convert to JSONB if it's an array/object
+            let aboutReferencesJson = null;
+            if (aboutReferences) {
+                if (typeof aboutReferences === 'string') {
+                    try {
+                        // Try to parse if it's a JSON string
+                        const parsed = JSON.parse(aboutReferences);
+                        aboutReferencesJson = Array.isArray(parsed) ? parsed : [parsed];
+                    } catch (e) {
+                        // If parsing fails, treat as plain string
+                        aboutReferencesJson = aboutReferences;
+                    }
+                } else if (Array.isArray(aboutReferences)) {
+                    aboutReferencesJson = aboutReferences;
+                } else if (typeof aboutReferences === 'object') {
+                    aboutReferencesJson = [aboutReferences];
+                }
+            }
+
+            // Insert the note with note_type, action, and about_references
             const noteQuery = `
-                INSERT INTO job_seeker_notes (job_seeker_id, text, note_type, created_by)
-                VALUES ($1, $2, $3, $4)
-                RETURNING id, text, note_type, created_at
+                INSERT INTO job_seeker_notes (job_seeker_id, text, note_type, action, about_references, created_by)
+                VALUES ($1, $2, $3, $4, $5, $6)
+                RETURNING *
             `;
 
-            const noteResult = await client.query(noteQuery, [jobSeekerId, text, noteType, userId]);
+            const noteResult = await client.query(noteQuery, [
+                jobSeekerId,
+                text,
+                noteType,
+                action,
+                aboutReferencesJson ? JSON.stringify(aboutReferencesJson) : null,
+                userId
+            ]);
 
             // Update last contact date to current date
             const updateContactQuery = `
@@ -714,8 +770,8 @@ class JobSeeker {
     }
 
     // Keep the existing addNote method for backward compatibility but make it call the new method
-    async addNote(jobSeekerId, text, userId) {
-        return await this.addNoteAndUpdateContact(jobSeekerId, text, userId);
+    async addNote(jobSeekerId, text, userId, action = null, aboutReferences = null) {
+        return await this.addNoteAndUpdateContact(jobSeekerId, text, userId, 'General Note', action, aboutReferences);
     }
 
     // Get notes for a job seeker
@@ -731,7 +787,18 @@ class JobSeeker {
             `;
 
             const result = await client.query(query, [jobSeekerId]);
-            return result.rows;
+            
+            // Parse about_references JSONB to object/array
+            return result.rows.map(row => {
+                if (row.about_references && typeof row.about_references === 'string') {
+                    try {
+                        row.about_references = JSON.parse(row.about_references);
+                    } catch (e) {
+                        // If parsing fails, keep as string
+                    }
+                }
+                return row;
+            });
         } catch (error) {
             throw error;
         } finally {

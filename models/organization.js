@@ -412,10 +412,11 @@ class Organization {
     }
 
     // Update organization by ID
-    async update(id, updateData, userId = null) {
+    async update(id, updateData, userId = null, userRole = null) {
         console.log(`\n=== ORGANIZATION MODEL UPDATE START ===`);
         console.log(`Organization ID: ${id}`);
         console.log(`User ID: ${userId}`);
+        console.log(`User Role: ${userRole}`);
         console.log(`Update Data:`, JSON.stringify(updateData, null, 2));
         
         const client = await this.pool.connect();
@@ -442,9 +443,16 @@ class Organization {
                 custom_fields: organization.custom_fields
             });
 
+            // Check permissions: Allow if user created the org OR user is admin/owner
             if (userId !== null && organization.created_by !== userId) {
-                console.error(`Permission denied: User ${userId} cannot update org ${id} (created by ${organization.created_by})`);
-                throw new Error('You do not have permission to update this organization');
+                // Check if user is admin or owner
+                const isAdminOrOwner = userRole === 'admin' || userRole === 'owner';
+                if (!isAdminOrOwner) {
+                    console.error(`Permission denied: User ${userId} (role: ${userRole}) cannot update org ${id} (created by ${organization.created_by})`);
+                    throw new Error('You do not have permission to update this organization');
+                } else {
+                    console.log(`Permission granted: User ${userId} is ${userRole}, allowing update of org ${id}`);
+                }
             }
 
             const oldState = { ...organization };
@@ -896,13 +904,21 @@ class Organization {
     async getDependencyCounts(id) {
         const client = await this.pool.connect();
         try {
+            // Ensure id is an integer for database queries
+            const orgId = typeof id === 'string' ? parseInt(id, 10) : id;
+            if (isNaN(orgId)) {
+                throw new Error(`Invalid organization ID: ${id}`);
+            }
+            
+            console.log(`Getting dependency counts for organization ID: ${orgId} (original: ${id})`);
+            
             // Get Hiring Managers (includes both directly created and transferred)
             const hmQuery = await client.query(
                 `SELECT id, first_name, last_name, email, title, created_at 
                  FROM hiring_managers 
                  WHERE organization_id = $1 AND status != 'Archived'
                  ORDER BY created_at DESC`,
-                [id]
+                [orgId]
             );
 
             // Get Jobs (includes both directly created and transferred)
@@ -911,7 +927,7 @@ class Organization {
                  FROM jobs 
                  WHERE organization_id = $1 AND status != 'Archived'
                  ORDER BY created_at DESC`,
-                [id]
+                [orgId]
             );
 
             // Get Placements (linked via jobs, includes both directly created and transferred)
@@ -924,18 +940,21 @@ class Organization {
                  LEFT JOIN job_seekers js ON p.job_seeker_id = js.id
                  WHERE j.organization_id = $1 AND p.status != 'Archived'
                  ORDER BY p.created_at DESC`,
-                [id]
+                [orgId]
             );
 
             // Get Child Organizations
+            // parent_organization is VARCHAR(255), so we need to compare as text
+            // Convert orgId to string to match the VARCHAR column type
+            const orgIdStr = String(orgId);
             const childOrgQuery = await client.query(
                 `SELECT id, name, created_at 
                  FROM organizations 
-                 WHERE (parent_organization = $1 OR parent_organization = $2) 
+                 WHERE parent_organization = $1 
                  AND status != 'Archived' 
-                 AND id != $1
+                 AND id != $2
                  ORDER BY created_at DESC`,
-                [id, String(id)]
+                [orgIdStr, orgId]
             );
 
             // Format hiring managers
@@ -981,10 +1000,10 @@ class Organization {
                 placements: placements.length,
                 child_organizations: childOrganizations.length,
                 details: {
-                    hiring_managers,
-                    jobs,
-                    placements,
-                    child_organizations
+                    hiring_managers: hiringManagers,
+                    jobs: jobs,
+                    placements: placements,
+                    child_organizations: childOrganizations
                 }
             };
         } catch (error) {
@@ -1059,7 +1078,14 @@ class Organization {
         try {
             await client.query('BEGIN');
 
+            // Ensure id is an integer for database queries
+            const orgId = typeof id === 'string' ? parseInt(id, 10) : id;
+            if (isNaN(orgId)) {
+                throw new Error(`Invalid organization ID: ${id}`);
+            }
+            
             const timestamp = new Date();
+            const orgIdStr = String(orgId);
 
             // 1. Archive Hiring Managers
             await client.query(`
@@ -1069,7 +1095,7 @@ class Organization {
                     archive_reason = $3, 
                     updated_at = $2
                 WHERE organization_id = $1 AND status != 'Archived'
-            `, [id, timestamp, archiveReason]);
+            `, [orgId, timestamp, archiveReason]);
 
             // 2. Archive Jobs
             await client.query(`
@@ -1079,7 +1105,7 @@ class Organization {
                     archive_reason = $3, 
                     updated_at = $2
                 WHERE organization_id = $1 AND status != 'Archived'
-            `, [id, timestamp, archiveReason]);
+            `, [orgId, timestamp, archiveReason]);
 
             // 3. Archive Placements (linked via jobs of this org)
             await client.query(`
@@ -1090,17 +1116,19 @@ class Organization {
                     updated_at = $2
                 FROM jobs j
                 WHERE p.job_id = j.id AND j.organization_id = $1 AND p.status != 'Archived'
-            `, [id, timestamp, archiveReason]);
+            `, [orgId, timestamp, archiveReason]);
 
-            // 4. Archive Child Organizations (Handle both string ID and numeric ID storage for parent_organization)
+            // 4. Archive Child Organizations
+            // parent_organization is VARCHAR(255), so compare as text
+            // id column is INTEGER, so compare as integer
             await client.query(`
                 UPDATE organizations 
                 SET status = 'Archived', 
                     archived_at = $2, 
                     archive_reason = $3, 
                     updated_at = $2
-                WHERE (parent_organization = $1 OR parent_organization = $4) AND status != 'Archived' AND id != $1
-            `, [id, timestamp, archiveReason, String(id)]);
+                WHERE parent_organization = $4 AND status != 'Archived' AND id != $1
+            `, [orgId, timestamp, archiveReason, orgIdStr]);
 
             // 5. Archive the Organization itself
             const result = await client.query(`
@@ -1111,7 +1139,7 @@ class Organization {
                     updated_at = $2
                 WHERE id = $1
                 RETURNING *
-            `, [id, timestamp, archiveReason]);
+            `, [orgId, timestamp, archiveReason]);
 
             // Add history entry
             await client.query(`

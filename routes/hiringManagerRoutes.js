@@ -27,6 +27,9 @@ function createHiringManagerRouter(hiringManagerController, authMiddleware) {
     // (admins can update any, regular users only their own)
     router.put('/:id', hiringManagerController.update);
 
+    // Bulk update hiring managers
+    router.post('/bulk-update', hiringManagerController.bulkUpdate);
+
     // Delete hiring manager by ID 
     // (admins can delete any, regular users only their own)
     router.delete('/:id', hiringManagerController.delete);

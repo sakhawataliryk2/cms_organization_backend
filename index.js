@@ -310,8 +310,17 @@ app.use(async (req, res, next) => {
             await teamController.initTables();
             const authController = getAuthController();
             await authController.initTables();
-            const jobXMLController = getJobXMLController();
-            await jobXMLController.initTables();
+            try {
+              const jobXMLController = getJobXMLController();
+              if (jobXMLController && typeof jobXMLController.initTables === 'function') {
+                await jobXMLController.initTables();
+              } else {
+                console.warn('⚠️ jobXMLController.initTables is not available, skipping...');
+              }
+            } catch (jobXMLError) {
+              console.warn('⚠️ Failed to initialize jobXML tables:', jobXMLError.message);
+              // Continue anyway
+            }
             coreTablesInitialized = true;
             console.log("Core tables (offices, teams, users) initialized.");
           })();
@@ -327,8 +336,14 @@ app.use(async (req, res, next) => {
 
       // Initialize hiring manager tables
       if (req.path.startsWith("/api/hiring-managers")) {
-        const hiringManagerController = getHiringManagerController();
-        await hiringManagerController.initTables();
+        try {
+          const hiringManagerController = getHiringManagerController();
+          await hiringManagerController.initTables();
+        } catch (hmError) {
+          console.error('❌ Failed to initialize hiring manager tables:', hmError.message);
+          console.error('Error stack:', hmError.stack);
+          // Don't throw - let the route handle it, but log clearly
+        }
       }
 
       // Initialize job tables
@@ -392,7 +407,9 @@ app.use(async (req, res, next) => {
       }
 
       // Initialize delete request tables
-      if (req.path.includes("/delete-request") || req.path.match(/\/delete\/\d+\/(approve|deny)/)) {
+      if (req.path.includes("/delete-request") || 
+          req.path.match(/\/delete\/\d+/) || 
+          req.path.match(/\/delete\/\d+\/(approve|deny)/)) {
         const deleteRequestController = getDeleteRequestController();
         await deleteRequestController.initTables();
       }
@@ -492,7 +509,9 @@ app.use("/api/users", sanitizeInputs, (req, res, next) => {
 // Setup delete request routes FIRST (before main routes to avoid conflicts)
 const applyDeleteRequestRoutes = (basePath) => {
   app.use(basePath, sanitizeInputs, (req, res, next) => {
-    if (req.path.includes("/delete-request") || req.path.match(/\/delete\/\d+\/(approve|deny)/)) {
+    if (req.path.includes("/delete-request") || 
+        req.path.match(/\/delete\/\d+/) || 
+        req.path.match(/\/delete\/\d+\/(approve|deny)/)) {
       const authMiddleware = { verifyToken: verifyToken(getPool()), checkRole };
       const router = createDeleteRequestRouter(
         getDeleteRequestController(),
@@ -508,10 +527,8 @@ const applyDeleteRequestRoutes = (basePath) => {
 applyDeleteRequestRoutes("/api/organizations");
 applyDeleteRequestRoutes("/api/hiring-managers");
 applyDeleteRequestRoutes("/api/job-seekers");
-applyDeleteRequestRoutes("/api/jobs");
-applyDeleteRequestRoutes("/api/leads");
-applyDeleteRequestRoutes("/api/tasks");
-applyDeleteRequestRoutes("/api/placements");
+// Note: jobs, leads, tasks, and placements have their own specific delete request routers
+// defined below, so we don't use applyDeleteRequestRoutes for them
 
 // Setup organization routes with authentication
 app.use("/api/organizations", sanitizeInputs, (req, res, next) => {
@@ -545,7 +562,9 @@ app.use("/api/hiring-managers/transfer", sanitizeInputs, (req, res, next) => {
 
 // Setup delete request routes for jobs FIRST (before main routes to avoid conflicts)
 app.use("/api/jobs", sanitizeInputs, (req, res, next) => {
-  if (req.path.includes("/delete-request") || req.path.match(/\/delete\/\d+\/(approve|deny)/)) {
+  if (req.path.includes("/delete-request") || 
+      req.path.match(/\/delete\/\d+/) || 
+      req.path.match(/\/delete\/\d+\/(approve|deny)/)) {
     const authMiddleware = { verifyToken: verifyToken(getPool()), checkRole };
     const router = createJobDeleteRequestRouter(
       getDeleteRequestController(),
@@ -606,7 +625,9 @@ app.use("/api/custom-fields", sanitizeInputs, (req, res, next) => {
 
 // Setup delete request routes for leads FIRST (before main routes to avoid conflicts)
 app.use("/api/leads", sanitizeInputs, (req, res, next) => {
-  if (req.path.includes("/delete-request") || req.path.match(/\/delete\/\d+\/(approve|deny)/)) {
+  if (req.path.includes("/delete-request") || 
+      req.path.match(/\/delete\/\d+/) || 
+      req.path.match(/\/delete\/\d+\/(approve|deny)/)) {
     const authMiddleware = { verifyToken: verifyToken(getPool()), checkRole };
     const router = createLeadDeleteRequestRouter(
       getDeleteRequestController(),
@@ -626,7 +647,9 @@ app.use("/api/leads", sanitizeInputs, (req, res, next) => {
 
 // Setup delete request routes for tasks FIRST (before main routes to avoid conflicts)
 app.use("/api/tasks", sanitizeInputs, (req, res, next) => {
-  if (req.path.includes("/delete-request") || req.path.match(/\/delete\/\d+\/(approve|deny)/)) {
+  if (req.path.includes("/delete-request") || 
+      req.path.match(/\/delete\/\d+/) || 
+      req.path.match(/\/delete\/\d+\/(approve|deny)/)) {
     const authMiddleware = { verifyToken: verifyToken(getPool()), checkRole };
     const router = createTaskDeleteRequestRouter(
       getDeleteRequestController(),
@@ -646,7 +669,9 @@ app.use("/api/tasks", sanitizeInputs, (req, res, next) => {
 
 // Setup delete request routes for placements FIRST (before main routes to avoid conflicts)
 app.use("/api/placements", sanitizeInputs, (req, res, next) => {
-  if (req.path.includes("/delete-request") || req.path.match(/\/delete\/\d+\/(approve|deny)/)) {
+  if (req.path.includes("/delete-request") || 
+      req.path.match(/\/delete\/\d+/) || 
+      req.path.match(/\/delete\/\d+\/(approve|deny)/)) {
     const authMiddleware = { verifyToken: verifyToken(getPool()), checkRole };
     const router = createPlacementDeleteRequestRouter(
       getDeleteRequestController(),

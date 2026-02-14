@@ -153,9 +153,170 @@ async function runArchiveCleanup(pool) {
       console.log(`Successfully cleaned up job seeker ${js.id}`);
     }
 
+    // ---------- Leads ----------
+    const archivedLeadsResult = await client.query(
+      `
+      SELECT l.id, l.first_name, l.last_name
+      FROM leads l
+      WHERE l.status = 'Archived'
+        AND l.archived_at IS NOT NULL
+        AND l.archived_at <= CURRENT_TIMESTAMP - INTERVAL '7 days'
+      `
+    );
+
+    const archivedLeads = archivedLeadsResult.rows;
+
+    for (const lead of archivedLeads) {
+      const leadName = `${lead.last_name || ""}, ${lead.first_name || ""}`.trim() || `ID ${lead.id}`;
+      console.log(`Cleaning up archived lead: ${leadName} (ID: ${lead.id})`);
+
+      await client.query(
+        "DELETE FROM lead_notes WHERE lead_id = $1",
+        [lead.id]
+      );
+      await client.query(
+        "DELETE FROM lead_history WHERE lead_id = $1",
+        [lead.id]
+      );
+      await client.query(
+        "DELETE FROM documents WHERE entity_type = 'lead' AND entity_id = $1",
+        [lead.id]
+      );
+      await client.query("DELETE FROM leads WHERE id = $1", [lead.id]);
+
+      await client.query(
+        `
+        UPDATE scheduled_tasks
+        SET status = 'completed', completed_at = CURRENT_TIMESTAMP
+        WHERE task_type = 'archive_cleanup'
+          AND task_data->>'lead_id' = $1
+      `,
+        [lead.id.toString()]
+      );
+
+      console.log(`Successfully cleaned up lead ${lead.id}`);
+    }
+
+    // ---------- Tasks ----------
+    const archivedTasksResult = await client.query(
+      `
+      SELECT t.id, t.title
+      FROM tasks t
+      WHERE t.status = 'Archived'
+        AND t.archived_at IS NOT NULL
+        AND t.archived_at <= CURRENT_TIMESTAMP - INTERVAL '7 days'
+      `
+    );
+
+    const archivedTasks = archivedTasksResult.rows;
+
+    for (const task of archivedTasks) {
+      console.log(`Cleaning up archived task: ${task.title || `ID ${task.id}`} (ID: ${task.id})`);
+
+      await client.query(
+        "DELETE FROM task_notes WHERE task_id = $1",
+        [task.id]
+      );
+      await client.query(
+        "DELETE FROM task_history WHERE task_id = $1",
+        [task.id]
+      );
+      await client.query("DELETE FROM tasks WHERE id = $1", [task.id]);
+
+      await client.query(
+        `
+        UPDATE scheduled_tasks
+        SET status = 'completed', completed_at = CURRENT_TIMESTAMP
+        WHERE task_type = 'archive_cleanup'
+          AND task_data->>'task_id' = $1
+      `,
+        [task.id.toString()]
+      );
+
+      console.log(`Successfully cleaned up task ${task.id}`);
+    }
+
+    // ---------- Placements ----------
+    const archivedPlacementsResult = await client.query(
+      `
+      SELECT p.id, p.job_id, p.job_seeker_id
+      FROM placements p
+      WHERE p.status = 'Archived'
+        AND p.archived_at IS NOT NULL
+        AND p.archived_at <= CURRENT_TIMESTAMP - INTERVAL '7 days'
+      `
+    );
+
+    const archivedPlacements = archivedPlacementsResult.rows;
+
+    for (const placement of archivedPlacements) {
+      console.log(`Cleaning up archived placement: ID ${placement.id}`);
+
+      await client.query(
+        "DELETE FROM placement_notes WHERE placement_id = $1",
+        [placement.id]
+      );
+      await client.query(
+        "DELETE FROM placement_history WHERE placement_id = $1",
+        [placement.id]
+      );
+      await client.query("DELETE FROM placements WHERE id = $1", [placement.id]);
+
+      await client.query(
+        `
+        UPDATE scheduled_tasks
+        SET status = 'completed', completed_at = CURRENT_TIMESTAMP
+        WHERE task_type = 'archive_cleanup'
+          AND task_data->>'placement_id' = $1
+      `,
+        [placement.id.toString()]
+      );
+
+      console.log(`Successfully cleaned up placement ${placement.id}`);
+    }
+
+    // ---------- Jobs ----------
+    const archivedJobsResult = await client.query(
+      `
+      SELECT j.id, j.job_title
+      FROM jobs j
+      WHERE j.status = 'Archived'
+        AND j.archived_at IS NOT NULL
+        AND j.archived_at <= CURRENT_TIMESTAMP - INTERVAL '7 days'
+      `
+    );
+
+    const archivedJobs = archivedJobsResult.rows;
+
+    for (const job of archivedJobs) {
+      console.log(`Cleaning up archived job: ${job.job_title || `ID ${job.id}`} (ID: ${job.id})`);
+
+      await client.query(
+        "DELETE FROM job_notes WHERE job_id = $1",
+        [job.id]
+      );
+      await client.query(
+        "DELETE FROM job_history WHERE job_id = $1",
+        [job.id]
+      );
+      await client.query("DELETE FROM jobs WHERE id = $1", [job.id]);
+
+      await client.query(
+        `
+        UPDATE scheduled_tasks
+        SET status = 'completed', completed_at = CURRENT_TIMESTAMP
+        WHERE task_type = 'archive_cleanup'
+          AND task_data->>'job_id' = $1
+      `,
+        [job.id.toString()]
+      );
+
+      console.log(`Successfully cleaned up job ${job.id}`);
+    }
+
     await client.query("COMMIT");
     console.log(
-      `Archive cleanup completed. Processed ${archivedOrgs.length} organizations, ${archivedHms.length} hiring managers, ${archivedJs.length} job seekers.`
+      `Archive cleanup completed. Processed ${archivedOrgs.length} organizations, ${archivedHms.length} hiring managers, ${archivedJs.length} job seekers, ${archivedLeads.length} leads, ${archivedTasks.length} tasks, ${archivedPlacements.length} placements, ${archivedJobs.length} jobs.`
     );
   } catch (error) {
     await client.query("ROLLBACK");

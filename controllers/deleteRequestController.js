@@ -33,11 +33,21 @@ class DeleteRequestController {
   }
 
   async initTables() {
-    await this.deleteRequestModel.initTable();
+    try {
+      console.log('Initializing delete request tables...');
+      await this.deleteRequestModel.initTable();
+      console.log('✅ Delete request tables initialized');
+    } catch (error) {
+      console.error('❌ Error initializing delete request tables:', error);
+      throw error;
+    }
   }
 
   async create(req, res) {
     try {
+      // Ensure table is initialized before creating delete request
+      await this.initTables();
+      
       const userId = req.user?.id;
       if (!userId) {
         return res.status(401).json({
@@ -336,6 +346,13 @@ class DeleteRequestController {
 
   async approve(req, res) {
     try {
+      // Ensure all tables are initialized before processing deletion
+      await this.initTables();
+      await this.leadModel.initTable();
+      await this.taskModel.initTable();
+      await this.placementModel.initTable();
+      await this.jobModel.initTable();
+      
       const userId = req.user?.id;
       const { id } = req.params;
 
@@ -557,6 +574,12 @@ class DeleteRequestController {
   }
 
   async executeDeletion(deleteRequest) {
+    // Ensure all tables are initialized before executing deletion
+    await this.leadModel.initTable();
+    await this.taskModel.initTable();
+    await this.placementModel.initTable();
+    await this.jobModel.initTable();
+    
     const client = await this.organizationModel.pool.connect();
     try {
       await client.query("BEGIN");
@@ -567,14 +590,18 @@ class DeleteRequestController {
         
         if (isCascade) {
           // Get child organizations before archiving
+          // parent_organization is VARCHAR(255), so compare as text
+          // id is INTEGER, so compare as integer
+          const recordId = typeof deleteRequest.record_id === 'string' ? parseInt(deleteRequest.record_id, 10) : deleteRequest.record_id;
+          const recordIdStr = String(recordId);
           const childOrgsQuery = await client.query(
             `
             SELECT id FROM organizations 
-            WHERE (parent_organization = $1 OR parent_organization = $2) 
+            WHERE parent_organization = $1 
             AND status != 'Archived' 
-            AND id != $1
+            AND id != $2
             `,
-            [deleteRequest.record_id, String(deleteRequest.record_id)]
+            [recordIdStr, recordId]
           );
           const childOrgIds = childOrgsQuery.rows.map(row => row.id);
 
@@ -778,21 +805,30 @@ class DeleteRequestController {
           ]
         );
       } else if (deleteRequest.record_type === "job") {
-        // Update job status to "Archived" (if status column exists) or mark as deleted
+        // Update job status to "Archived" and set archived_at timestamp
         await client.query(
           `
           UPDATE jobs
           SET status = 'Archived',
+              archived_at = CURRENT_TIMESTAMP,
+              archive_reason = 'Deletion',
               updated_at = CURRENT_TIMESTAMP
           WHERE id = $1
         `,
           [deleteRequest.record_id]
         );
 
-        await this.jobModel.addNote(
-          deleteRequest.record_id,
-          "Record archived following payroll approval",
-          deleteRequest.reviewed_by
+        // Add note within the same transaction to avoid deadlock
+        await client.query(
+          `
+          INSERT INTO job_notes (job_id, text, created_by)
+          VALUES ($1, $2, $3)
+        `,
+          [
+            deleteRequest.record_id,
+            "Record archived following payroll approval",
+            deleteRequest.reviewed_by
+          ]
         );
 
         await client.query(
@@ -813,21 +849,30 @@ class DeleteRequestController {
           ]
         );
       } else if (deleteRequest.record_type === "lead") {
-        // Update lead status to "Archived" (if status column exists) or mark as deleted
+        // Update lead status to "Archived" and set archived_at timestamp
         await client.query(
           `
           UPDATE leads
           SET status = 'Archived',
+              archived_at = CURRENT_TIMESTAMP,
+              archive_reason = 'Deletion',
               updated_at = CURRENT_TIMESTAMP
           WHERE id = $1
         `,
           [deleteRequest.record_id]
         );
 
-        await this.leadModel.addNote(
-          deleteRequest.record_id,
-          "Record archived following payroll approval",
-          deleteRequest.reviewed_by
+        // Add note within the same transaction to avoid deadlock
+        await client.query(
+          `
+          INSERT INTO lead_notes (lead_id, text, created_by)
+          VALUES ($1, $2, $3)
+        `,
+          [
+            deleteRequest.record_id,
+            "Record archived following payroll approval",
+            deleteRequest.reviewed_by
+          ]
         );
 
         await client.query(
@@ -848,21 +893,30 @@ class DeleteRequestController {
           ]
         );
       } else if (deleteRequest.record_type === "task") {
-        // Update task status to "Archived" or mark as deleted
+        // Update task status to "Archived" and set archived_at timestamp
         await client.query(
           `
           UPDATE tasks
           SET status = 'Archived',
+              archived_at = CURRENT_TIMESTAMP,
+              archive_reason = 'Deletion',
               updated_at = CURRENT_TIMESTAMP
           WHERE id = $1
         `,
           [deleteRequest.record_id]
         );
 
-        await this.taskModel.addNote(
-          deleteRequest.record_id,
-          "Record archived following payroll approval",
-          deleteRequest.reviewed_by
+        // Add note within the same transaction to avoid deadlock
+        await client.query(
+          `
+          INSERT INTO task_notes (task_id, text, created_by)
+          VALUES ($1, $2, $3)
+        `,
+          [
+            deleteRequest.record_id,
+            "Record archived following payroll approval",
+            deleteRequest.reviewed_by
+          ]
         );
 
         await client.query(
@@ -883,21 +937,32 @@ class DeleteRequestController {
           ]
         );
       } else if (deleteRequest.record_type === "placement") {
-        // Update placement status to "Archived" or mark as deleted
+        // Update placement status to "Archived" and set archived_at timestamp
         await client.query(
           `
           UPDATE placements
           SET status = 'Archived',
+              archived_at = CURRENT_TIMESTAMP,
+              archive_reason = 'Deletion',
               updated_at = CURRENT_TIMESTAMP
           WHERE id = $1
         `,
           [deleteRequest.record_id]
         );
 
-        await this.placementModel.addNote(
-          deleteRequest.record_id,
-          "Record archived following payroll approval",
-          deleteRequest.reviewed_by
+        // Add note within the same transaction to avoid deadlock
+        await client.query(
+          `
+          INSERT INTO placement_notes (placement_id, text, action, about_references, created_by)
+          VALUES ($1, $2, $3, $4, $5)
+        `,
+          [
+            deleteRequest.record_id,
+            "Record archived following payroll approval",
+            null, // action
+            null, // about_references
+            deleteRequest.reviewed_by
+          ]
         );
 
         await client.query(

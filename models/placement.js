@@ -37,7 +37,9 @@ class Placement {
                     created_by INTEGER REFERENCES users(id),
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    custom_fields JSONB
+                    custom_fields JSONB,
+                    archived_at TIMESTAMP,
+                    archive_reason VARCHAR(50)
                 )
             `);
 
@@ -61,6 +63,14 @@ class Placement {
             await client.query(`
                 ALTER TABLE placements 
                 ADD COLUMN IF NOT EXISTS organization_id INTEGER REFERENCES organizations(id)
+            `);
+
+            // Add archived_at and archive_reason columns if they don't exist (for existing tables)
+            await client.query(`
+                ALTER TABLE placements ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP
+            `);
+            await client.query(`
+                ALTER TABLE placements ADD COLUMN IF NOT EXISTS archive_reason VARCHAR(50)
             `);
 
             // Create indexes for better query performance

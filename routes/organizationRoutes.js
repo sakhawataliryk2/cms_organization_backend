@@ -86,6 +86,9 @@ function createDeleteRequestRouter(deleteRequestController, authMiddleware) {
     // All routes require authentication
     router.use(verifyToken);
 
+    // Get delete request by ID (for approval/deny pages)
+    router.get('/delete/:id', deleteRequestController.getById);
+
     // Get delete request for a record
     router.get('/:id/delete-request', deleteRequestController.getByRecord);
 

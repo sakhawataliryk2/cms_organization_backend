@@ -345,11 +345,11 @@ class OrganizationController {
             const { id } = req.params;
             const updateData = req.body;
 
-            // Get the current user's ID from the auth middleware
+            // Get the current user's ID and role from the auth middleware
             const userId = req.user.id;
             const userRole = req.user.role;
 
-            const organization = await this.organizationModel.update(id, updateData, null);
+            const organization = await this.organizationModel.update(id, updateData, userId, userRole);
 
             if (!organization) {
                 return res.status(404).json({
@@ -409,9 +409,10 @@ class OrganizationController {
                 });
             }
 
-            // Get the current user's ID from the auth middleware
+            // Get the current user's ID and role from the auth middleware
             const userId = req.user.id;
-            console.log('Processing bulk update for user:', userId);
+            const userRole = req.user.role;
+            console.log('Processing bulk update for user:', userId, 'role:', userRole);
             console.log('Organization IDs to update:', ids);
             console.log('Updates to apply:', JSON.stringify(updates, null, 2));
 
@@ -425,10 +426,12 @@ class OrganizationController {
             for (const id of ids) {
                 try {
                     console.log(`\n--- Processing organization ${id} ---`);
-                    console.log(`Calling organizationModel.update(${id}, updates, ${userId})`);
+                    // Clone updates to avoid mutations affecting other iterations
+                    const updateData = JSON.parse(JSON.stringify(updates));
+                    console.log(`Calling organizationModel.update(${id}, updates, ${userId}, ${userRole})`);
                     console.log(`Updates object:`, JSON.stringify(updates, null, 2));
                     
-                    const organization = await this.organizationModel.update(id, updates, userId);
+                    const organization = await this.organizationModel.update(id, updateData, userId, userRole);
                     
                     if (organization) {
                         results.successful.push(id);

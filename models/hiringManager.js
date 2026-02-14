@@ -150,12 +150,56 @@ class HiringManager {
             await client.query(`
                 CREATE TABLE IF NOT EXISTS hiring_manager_notes (
                     id SERIAL PRIMARY KEY,
-                    hiring_manager_id INTEGER NOT NULL REFERENCES hiring_managers(id) ON DELETE CASCADE,
+                    hiring_manager_id INTEGER REFERENCES hiring_managers(id) ON DELETE CASCADE,
                     text TEXT NOT NULL,
                     created_by INTEGER REFERENCES users(id),
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             `);
+
+            // Add action and about_references columns if they don't exist (for existing tables)
+            console.log('🔄 Checking for action and about_references columns in hiring_manager_notes...');
+            try {
+                // Check and add action column
+                const actionColumnCheck = await client.query(`
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_schema='public' AND table_name='hiring_manager_notes' AND column_name='action'
+                `);
+                console.log(`Action column check result: ${actionColumnCheck.rows.length} rows found`);
+                if (actionColumnCheck.rows.length === 0) {
+                    console.log('Adding action column...');
+                    await client.query(`ALTER TABLE hiring_manager_notes ADD COLUMN action VARCHAR(255)`);
+                    console.log('✅ Migration: Added action column to hiring_manager_notes');
+                } else {
+                    console.log('✅ Action column already exists');
+                }
+            } catch (err) {
+                console.error('❌ Error checking/adding action column:', err.message);
+                console.error('Error stack:', err.stack);
+                throw err; // Re-throw to ensure we know about the failure
+            }
+            
+            try {
+                // Check and add about_references column
+                const aboutRefColumnCheck = await client.query(`
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_schema='public' AND table_name='hiring_manager_notes' AND column_name='about_references'
+                `);
+                console.log(`About_references column check result: ${aboutRefColumnCheck.rows.length} rows found`);
+                if (aboutRefColumnCheck.rows.length === 0) {
+                    console.log('Adding about_references column...');
+                    await client.query(`ALTER TABLE hiring_manager_notes ADD COLUMN about_references JSONB`);
+                    console.log('✅ Migration: Added about_references column to hiring_manager_notes');
+                } else {
+                    console.log('✅ About_references column already exists');
+                }
+            } catch (err) {
+                console.error('❌ Error checking/adding about_references column:', err.message);
+                console.error('Error stack:', err.stack);
+                throw err; // Re-throw to ensure we know about the failure
+            }
 
             // Create a table for hiring manager history
             await client.query(`
@@ -471,7 +515,7 @@ class HiringManager {
 
 
     // Update hiring manager by ID
-    async update(id, updateData, userId = null) {
+    async update(id, updateData, userId = null, userRole = null) {
         const client = await this.pool.connect();
         try {
             await client.query('BEGIN');
@@ -486,8 +530,13 @@ class HiringManager {
 
             const hiringManager = hiringManagerResult.rows[0];
 
+            // Check permissions: Allow if user created the hiring manager OR user is admin/owner
             if (userId !== null && hiringManager.created_by !== userId) {
-                throw new Error('You do not have permission to update this hiring manager');
+                // Check if user is admin or owner
+                const isAdminOrOwner = userRole === 'admin' || userRole === 'owner';
+                if (!isAdminOrOwner) {
+                    throw new Error('You do not have permission to update this hiring manager');
+                }
             }
 
             const oldState = { ...hiringManager };
@@ -728,18 +777,43 @@ class HiringManager {
     }
 
     // Add a note to a hiring manager
-    async addNote(hiringManagerId, text, userId) {
+    async addNote(hiringManagerId, text, userId, action = null, aboutReferences = null) {
         const client = await this.pool.connect();
         try {
             await client.query('BEGIN');
 
+            // Handle about_references - convert to JSONB if it's an array/object
+            let aboutReferencesJson = null;
+            if (aboutReferences) {
+                if (typeof aboutReferences === 'string') {
+                    try {
+                        // Try to parse if it's a JSON string
+                        const parsed = JSON.parse(aboutReferences);
+                        aboutReferencesJson = Array.isArray(parsed) ? parsed : [parsed];
+                    } catch (e) {
+                        // If parsing fails, treat as plain string
+                        aboutReferencesJson = aboutReferences;
+                    }
+                } else if (Array.isArray(aboutReferences)) {
+                    aboutReferencesJson = aboutReferences;
+                } else if (typeof aboutReferences === 'object') {
+                    aboutReferencesJson = [aboutReferences];
+                }
+            }
+
             const noteQuery = `
-                INSERT INTO hiring_manager_notes (hiring_manager_id, text, created_by)
-                VALUES ($1, $2, $3)
-                RETURNING id, text, created_at
+                INSERT INTO hiring_manager_notes (hiring_manager_id, text, action, about_references, created_by)
+                VALUES ($1, $2, $3, $4, $5)
+                RETURNING *
             `;
 
-            const noteResult = await client.query(noteQuery, [hiringManagerId, text, userId]);
+            const noteResult = await client.query(noteQuery, [
+                hiringManagerId,
+                text,
+                action,
+                aboutReferencesJson ? JSON.stringify(aboutReferencesJson) : null,
+                userId
+            ]);
 
             const historyQuery = `
                 INSERT INTO hiring_manager_history (
@@ -784,7 +858,18 @@ class HiringManager {
             `;
 
             const result = await client.query(query, [hiringManagerId]);
-            return result.rows;
+            
+            // Parse about_references JSONB to object/array
+            return result.rows.map(row => {
+                if (row.about_references && typeof row.about_references === 'string') {
+                    try {
+                        row.about_references = JSON.parse(row.about_references);
+                    } catch (e) {
+                        // If parsing fails, keep as string
+                    }
+                }
+                return row;
+            });
         } catch (error) {
             throw error;
         } finally {

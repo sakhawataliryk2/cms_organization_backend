@@ -10,6 +10,7 @@ class HiringManagerController {
         this.getAll = this.getAll.bind(this);
         this.getById = this.getById.bind(this);
         this.update = this.update.bind(this);
+        this.bulkUpdate = this.bulkUpdate.bind(this);
         this.delete = this.delete.bind(this);
         this.addNote = this.addNote.bind(this);
         this.getNotes = this.getNotes.bind(this);
@@ -234,13 +235,13 @@ class HiringManagerController {
                 }
             }
 
-            // Get the current user's ID from the auth middleware
+            // Get the current user's ID and role from the auth middleware
             const userId = req.user.id;
             const userRole = req.user.role;
 
             console.log(`User role: ${userRole}, User ID: ${userId}`);
 
-            const hiringManager = await this.hiringManagerModel.update(id, updateData, null);
+            const hiringManager = await this.hiringManagerModel.update(id, updateData, userId, userRole);
 
             if (!hiringManager) {
                 console.log("Update failed - hiring manager not found or no permission");
@@ -285,6 +286,106 @@ class HiringManagerController {
             res.status(500).json({
                 success: false,
                 message: 'An error occurred while updating the hiring manager',
+                error: process.env.NODE_ENV === 'production' ? undefined : error.message
+            });
+        }
+    }
+
+    // Bulk update hiring managers
+    async bulkUpdate(req, res) {
+        try {
+            console.log('=== BULK UPDATE REQUEST START ===');
+            console.log('Request body:', JSON.stringify(req.body, null, 2));
+            console.log('User ID:', req.user?.id);
+            console.log('User:', req.user);
+            
+            const { ids, updates } = req.body;
+
+            // Validate input
+            if (!ids || !Array.isArray(ids) || ids.length === 0) {
+                console.error('Validation failed: IDs array is required and must not be empty');
+                return res.status(400).json({
+                    success: false,
+                    message: 'IDs array is required and must not be empty'
+                });
+            }
+
+            if (!updates || typeof updates !== 'object') {
+                console.error('Validation failed: Updates object is required');
+                return res.status(400).json({
+                    success: false,
+                    message: 'Updates object is required'
+                });
+            }
+
+            // Get the current user's ID and role from the auth middleware
+            const userId = req.user.id;
+            const userRole = req.user.role;
+            console.log('Processing bulk update for user:', userId, 'role:', userRole);
+            console.log('Hiring Manager IDs to update:', ids);
+            console.log('Updates to apply:', JSON.stringify(updates, null, 2));
+
+            const results = {
+                successful: [],
+                failed: [],
+                errors: []
+            };
+
+            // Update each hiring manager
+            for (const id of ids) {
+                try {
+                    console.log(`\n--- Processing hiring manager ${id} ---`);
+                    // Clone updates to avoid mutations affecting other iterations
+                    const updateData = JSON.parse(JSON.stringify(updates));
+                    console.log(`Calling hiringManagerModel.update(${id}, updates, ${userId}, ${userRole})`);
+                    console.log(`Updates object:`, JSON.stringify(updates, null, 2));
+                    
+                    const hiringManager = await this.hiringManagerModel.update(id, updateData, userId, userRole);
+                    
+                    if (hiringManager) {
+                        results.successful.push(id);
+                        console.log(`✅ Successfully updated hiring manager ${id}`);
+                        console.log(`Updated hiring manager data:`, JSON.stringify({
+                            id: hiringManager.id,
+                            full_name: hiringManager.full_name,
+                            custom_fields: hiringManager.custom_fields
+                        }, null, 2));
+                    } else {
+                        results.failed.push(id);
+                        results.errors.push({ id, error: 'Hiring manager not found or permission denied' });
+                        console.error(`❌ Failed to update hiring manager ${id}: not found or permission denied`);
+                    }
+                } catch (error) {
+                    results.failed.push(id);
+                    const errorMsg = error.message || 'Unknown error';
+                    const errorStack = error.stack || 'No stack trace';
+                    results.errors.push({ id, error: errorMsg });
+                    console.error(`❌ Error updating hiring manager ${id}:`, errorMsg);
+                    console.error(`Error stack:`, errorStack);
+                    console.error(`Full error object:`, error);
+                }
+            }
+
+            console.log('\n=== BULK UPDATE RESULTS ===');
+            console.log(`Successful: ${results.successful.length}/${ids.length}`);
+            console.log(`Failed: ${results.failed.length}/${ids.length}`);
+            console.log('Results:', JSON.stringify(results, null, 2));
+            console.log('=== BULK UPDATE REQUEST END ===\n');
+
+            res.status(200).json({
+                success: true,
+                message: `Updated ${results.successful.length} of ${ids.length} hiring managers`,
+                results
+            });
+        } catch (error) {
+            console.error('=== BULK UPDATE FATAL ERROR ===');
+            console.error('Error:', error);
+            console.error('Error message:', error.message);
+            console.error('Error stack:', error.stack);
+            console.error('=== END FATAL ERROR ===');
+            res.status(500).json({
+                success: false,
+                message: 'An error occurred while bulk updating hiring managers',
                 error: process.env.NODE_ENV === 'production' ? undefined : error.message
             });
         }
@@ -356,7 +457,7 @@ class HiringManagerController {
     async addNote(req, res) {
         try {
             const { id } = req.params;
-            const { text, action, email_notification } = req.body;
+            const { text, action, about_references, aboutReferences, email_notification } = req.body;
 
             // Validate ID format
             if (!id || isNaN(parseInt(id))) {
@@ -376,8 +477,11 @@ class HiringManagerController {
             // Get the current user's ID
             const userId = req.user.id;
 
+            // Use about_references or aboutReferences (handle both naming conventions)
+            const finalAboutReferences = about_references || aboutReferences;
+
             // Add the note
-            const note = await this.hiringManagerModel.addNote(id, text, userId);
+            const note = await this.hiringManagerModel.addNote(id, text, userId, action, finalAboutReferences);
 
             // Send email notifications if provided (non-blocking - don't fail note creation if email fails)
             if (email_notification && Array.isArray(email_notification) && email_notification.length > 0) {

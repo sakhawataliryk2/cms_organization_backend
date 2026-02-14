@@ -347,7 +347,7 @@ class JobController {
     async addNote(req, res) {
         try {
             const { id } = req.params;
-            const { text, action, email_notification } = req.body;
+            const { text, action, about_references, aboutReferences, email_notification } = req.body;
 
             if (!text || !text.trim()) {
                 return res.status(400).json({
@@ -359,8 +359,11 @@ class JobController {
             // Get the current user's ID
             const userId = req.user.id;
 
+            // Use about_references or aboutReferences (handle both naming conventions)
+            const finalAboutReferences = about_references || aboutReferences;
+
             // Add the note
-            const note = await this.jobModel.addNote(id, text, userId);
+            const note = await this.jobModel.addNote(id, text, userId, action, finalAboutReferences);
 
             // Send email notifications if provided (non-blocking - don't fail note creation if email fails)
             if (email_notification && Array.isArray(email_notification) && email_notification.length > 0) {

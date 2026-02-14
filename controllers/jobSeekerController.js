@@ -731,7 +731,7 @@ class JobSeekerController {
 
       const { id } = req.params;
 
-      const { text, note_type, email_notification } = req.body;
+      const { text, note_type, action, about_references, aboutReferences, email_notification } = req.body;
 
 
 
@@ -753,7 +753,8 @@ class JobSeekerController {
 
       const userId = req.user.id;
 
-
+      // Use about_references or aboutReferences (handle both naming conventions)
+      const finalAboutReferences = about_references || aboutReferences;
 
       console.log(`Adding note to job seeker ${id} by user ${userId}`);
 
@@ -769,7 +770,11 @@ class JobSeekerController {
 
         userId,
 
-        note_type || 'General Note'
+        note_type || 'General Note',
+
+        action,
+
+        finalAboutReferences
 
       );
 

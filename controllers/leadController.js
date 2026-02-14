@@ -403,7 +403,7 @@ class LeadController {
     async addNote(req, res) {
         try {
             const { id } = req.params;
-            const { text } = req.body;
+            const { text, action, about_references, aboutReferences } = req.body;
 
             console.log(`Adding note to lead ${id}`);
 
@@ -425,8 +425,11 @@ class LeadController {
             // Get the current user's ID
             const userId = req.user.id;
 
+            // Use about_references or aboutReferences (handle both naming conventions)
+            const finalAboutReferences = about_references || aboutReferences;
+
             // Add the note and update last contact date
-            const note = await this.leadModel.addNote(id, text, userId);
+            const note = await this.leadModel.addNote(id, text, userId, action, finalAboutReferences);
 
             console.log("Note added successfully:", note);
 

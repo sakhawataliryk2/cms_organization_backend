@@ -492,7 +492,7 @@ class TaskController {
     async addNote(req, res) {
         try {
             const { id } = req.params;
-            const { text } = req.body;
+            const { text, action, about_references, aboutReferences } = req.body;
 
             console.log(`Adding note to task ${id}`);
 
@@ -514,8 +514,11 @@ class TaskController {
             // Get the current user's ID
             const userId = req.user.id;
 
+            // Use about_references or aboutReferences (handle both naming conventions)
+            const finalAboutReferences = about_references || aboutReferences;
+
             // Add the note
-            const note = await this.taskModel.addNote(id, text, userId);
+            const note = await this.taskModel.addNote(id, text, userId, action, finalAboutReferences);
 
             console.log("Note added successfully:", note);
 

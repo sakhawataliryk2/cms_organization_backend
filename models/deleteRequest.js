@@ -7,6 +7,7 @@ class DeleteRequest {
   async initTable() {
     const client = await this.pool.connect();
     try {
+      console.log('Initializing delete_requests table...');
       await client.query(`
         CREATE TABLE IF NOT EXISTS delete_requests (
           id SERIAL PRIMARY KEY,
@@ -30,29 +31,50 @@ class DeleteRequest {
       `);
 
       // Add new columns if they don't exist (for existing tables)
-      await client.query(`
-        DO $$ 
-        BEGIN
-          IF NOT EXISTS (
-            SELECT 1 FROM information_schema.columns 
-            WHERE table_name='delete_requests' AND column_name='action_type'
-          ) THEN
-            ALTER TABLE delete_requests ADD COLUMN action_type VARCHAR(50) DEFAULT 'standard';
-          END IF;
-          IF NOT EXISTS (
-            SELECT 1 FROM information_schema.columns 
-            WHERE table_name='delete_requests' AND column_name='dependencies_summary'
-          ) THEN
-            ALTER TABLE delete_requests ADD COLUMN dependencies_summary JSONB;
-          END IF;
-          IF NOT EXISTS (
-            SELECT 1 FROM information_schema.columns 
-            WHERE table_name='delete_requests' AND column_name='user_consent'
-          ) THEN
-            ALTER TABLE delete_requests ADD COLUMN user_consent BOOLEAN DEFAULT false;
-          END IF;
-        END $$;
+      // Check and add action_type column
+      const actionTypeCheck = await client.query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name='delete_requests' AND column_name='action_type'
       `);
+      if (actionTypeCheck.rows.length === 0) {
+        console.log('Adding action_type column to delete_requests table...');
+        await client.query(`
+          ALTER TABLE delete_requests 
+          ADD COLUMN action_type VARCHAR(50) DEFAULT 'standard'
+        `);
+        console.log('✅ action_type column added');
+      }
+
+      // Check and add dependencies_summary column
+      const depsSummaryCheck = await client.query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name='delete_requests' AND column_name='dependencies_summary'
+      `);
+      if (depsSummaryCheck.rows.length === 0) {
+        console.log('Adding dependencies_summary column to delete_requests table...');
+        await client.query(`
+          ALTER TABLE delete_requests 
+          ADD COLUMN dependencies_summary JSONB
+        `);
+        console.log('✅ dependencies_summary column added');
+      }
+
+      // Check and add user_consent column
+      const userConsentCheck = await client.query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name='delete_requests' AND column_name='user_consent'
+      `);
+      if (userConsentCheck.rows.length === 0) {
+        console.log('Adding user_consent column to delete_requests table...');
+        await client.query(`
+          ALTER TABLE delete_requests 
+          ADD COLUMN user_consent BOOLEAN DEFAULT false
+        `);
+        console.log('✅ user_consent column added');
+      }
 
       // Create indexes for faster lookups
       await client.query(`
@@ -64,6 +86,11 @@ class DeleteRequest {
       await client.query(`
         CREATE INDEX IF NOT EXISTS idx_delete_requests_requested_by ON delete_requests(requested_by)
       `);
+      
+      console.log('✅ delete_requests table initialization completed');
+    } catch (error) {
+      console.error('❌ Error initializing delete_requests table:', error);
+      throw error;
     } finally {
       client.release();
     }

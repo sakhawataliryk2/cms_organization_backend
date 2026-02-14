@@ -35,7 +35,9 @@ class Task {
                     completed_by INTEGER REFERENCES users(id),
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    custom_fields JSONB
+                    custom_fields JSONB,
+                    archived_at TIMESTAMP,
+                    archive_reason VARCHAR(50)
                 )
             `);
 
@@ -66,16 +68,55 @@ class Task {
                 END $$;
             `);
 
+            // Add archived_at and archive_reason columns if they don't exist (for existing tables)
+            await client.query(`
+                ALTER TABLE tasks ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP
+            `);
+            await client.query(`
+                ALTER TABLE tasks ADD COLUMN IF NOT EXISTS archive_reason VARCHAR(50)
+            `);
+
             // Create task notes table
             await client.query(`
                 CREATE TABLE IF NOT EXISTS task_notes (
                     id SERIAL PRIMARY KEY,
                     task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
                     text TEXT NOT NULL,
+                    action VARCHAR(255),
+                    about_references JSONB,
                     created_by INTEGER REFERENCES users(id),
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             `);
+
+            // Add action and about_references columns if they don't exist (for existing tables)
+            try {
+                const actionColumnCheck = await client.query(`
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_schema='public' AND table_name='task_notes' AND column_name='action'
+                `);
+                if (actionColumnCheck.rows.length === 0) {
+                    await client.query(`ALTER TABLE task_notes ADD COLUMN action VARCHAR(255)`);
+                    console.log('✅ Migration: Added action column to task_notes');
+                }
+            } catch (err) {
+                console.error('Error checking/adding action column:', err.message);
+            }
+            
+            try {
+                const aboutRefColumnCheck = await client.query(`
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_schema='public' AND table_name='task_notes' AND column_name='about_references'
+                `);
+                if (aboutRefColumnCheck.rows.length === 0) {
+                    await client.query(`ALTER TABLE task_notes ADD COLUMN about_references JSONB`);
+                    console.log('✅ Migration: Added about_references column to task_notes');
+                }
+            } catch (err) {
+                console.error('Error checking/adding about_references column:', err.message);
+            }
 
             // Create task history table
             await client.query(`
@@ -986,18 +1027,43 @@ class Task {
     }
 
     // Add a note to a task
-    async addNote(taskId, text, userId) {
+    async addNote(taskId, text, userId, action = null, aboutReferences = null) {
         const client = await this.pool.connect();
         try {
             await client.query('BEGIN');
 
+            // Handle about_references - convert to JSONB if it's an array/object
+            let aboutReferencesJson = null;
+            if (aboutReferences) {
+                if (typeof aboutReferences === 'string') {
+                    try {
+                        // Try to parse if it's a JSON string
+                        const parsed = JSON.parse(aboutReferences);
+                        aboutReferencesJson = Array.isArray(parsed) ? parsed : [parsed];
+                    } catch (e) {
+                        // If parsing fails, treat as plain string
+                        aboutReferencesJson = aboutReferences;
+                    }
+                } else if (Array.isArray(aboutReferences)) {
+                    aboutReferencesJson = aboutReferences;
+                } else if (typeof aboutReferences === 'object') {
+                    aboutReferencesJson = [aboutReferences];
+                }
+            }
+
             const noteQuery = `
-                INSERT INTO task_notes (task_id, text, created_by)
-                VALUES ($1, $2, $3)
-                RETURNING id, text, created_at
+                INSERT INTO task_notes (task_id, text, action, about_references, created_by)
+                VALUES ($1, $2, $3, $4, $5)
+                RETURNING *
             `;
 
-            const noteResult = await client.query(noteQuery, [taskId, text, userId]);
+            const noteResult = await client.query(noteQuery, [
+                taskId,
+                text,
+                action,
+                aboutReferencesJson ? JSON.stringify(aboutReferencesJson) : null,
+                userId
+            ]);
 
             // Add history entry
             const historyQuery = `
@@ -1043,7 +1109,18 @@ class Task {
             `;
 
             const result = await client.query(query, [taskId]);
-            return result.rows;
+            
+            // Parse about_references JSONB to object/array
+            return result.rows.map(row => {
+                if (row.about_references && typeof row.about_references === 'string') {
+                    try {
+                        row.about_references = JSON.parse(row.about_references);
+                    } catch (e) {
+                        // If parsing fails, keep as string
+                    }
+                }
+                return row;
+            });
         } catch (error) {
             throw error;
         } finally {
