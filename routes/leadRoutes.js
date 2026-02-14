@@ -23,6 +23,9 @@ function createLeadRouter(leadController, authMiddleware) {
     // (admins can update any, regular users only their own)
     router.put('/:id', leadController.update);
 
+    // Bulk update leads (must be before /:id route)
+    router.post('/bulk-update', leadController.bulkUpdate);
+
     // Delete lead by ID 
     // (admins can delete any, regular users only their own)
     router.delete('/:id', leadController.delete);

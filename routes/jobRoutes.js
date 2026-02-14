@@ -19,12 +19,15 @@ function createJobRouter(jobController, authMiddleware) {
     // Export jobs to XML (must be before /:id route)
     router.get('/export/xml', jobController.exportToXML);
 
+    // Create new job
+    router.post('/', jobController.create);
+
+    // Bulk update jobs (must be before /:id route)
+    router.post('/bulk-update', jobController.bulkUpdate);
+
     // Get job by ID 
     // (admins can see any, regular users only their own)
     router.get('/:id', jobController.getById);
-
-    // Create new job
-    router.post('/', jobController.create);
 
     // Update job by ID 
     // (admins can update any, regular users only their own)

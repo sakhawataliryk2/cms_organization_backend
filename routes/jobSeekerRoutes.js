@@ -43,7 +43,8 @@ function createJobSeekerRouter(jobSeekerController, authMiddleware) {
 
     router.put('/:id', jobSeekerController.update);
 
-
+    // Bulk update job seekers (must be before /:id route)
+    router.post('/bulk-update', jobSeekerController.bulkUpdate);
 
     // Delete job seeker by ID 
 

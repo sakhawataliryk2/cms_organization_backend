@@ -11,6 +11,7 @@ class TaskController {
         this.getAll = this.getAll.bind(this);
         this.getById = this.getById.bind(this);
         this.update = this.update.bind(this);
+        this.bulkUpdate = this.bulkUpdate.bind(this);
         this.delete = this.delete.bind(this);
         this.addNote = this.addNote.bind(this);
         this.getNotes = this.getNotes.bind(this);
@@ -239,6 +240,71 @@ class TaskController {
             res.status(500).json({
                 success: false,
                 message: 'An error occurred while updating the task',
+                error: process.env.NODE_ENV === 'production' ? undefined : error.message
+            });
+        }
+    }
+
+    // Bulk update tasks
+    async bulkUpdate(req, res) {
+        try {
+            console.log('=== BULK UPDATE REQUEST START ===');
+            console.log('Request body:', JSON.stringify(req.body, null, 2));
+            console.log('User ID:', req.user?.id);
+            
+            const { ids, updates } = req.body;
+
+            if (!ids || !Array.isArray(ids) || ids.length === 0) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'IDs array is required and must not be empty'
+                });
+            }
+
+            if (!updates || typeof updates !== 'object') {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Updates object is required'
+                });
+            }
+
+            const userId = req.user.id;
+            const userRole = req.user.role;
+            console.log('Processing bulk update for user:', userId, 'role:', userRole);
+
+            const results = {
+                successful: [],
+                failed: [],
+                errors: []
+            };
+
+            for (const id of ids) {
+                try {
+                    const updateData = JSON.parse(JSON.stringify(updates));
+                    const task = await this.taskModel.update(id, updateData, null);
+                    
+                    if (task) {
+                        results.successful.push(id);
+                    } else {
+                        results.failed.push(id);
+                        results.errors.push({ id, error: 'Task not found or permission denied' });
+                    }
+                } catch (error) {
+                    results.failed.push(id);
+                    results.errors.push({ id, error: error.message || 'Unknown error' });
+                }
+            }
+
+            res.status(200).json({
+                success: true,
+                message: `Updated ${results.successful.length} of ${ids.length} tasks`,
+                results
+            });
+        } catch (error) {
+            console.error('=== BULK UPDATE FATAL ERROR ===', error);
+            res.status(500).json({
+                success: false,
+                message: 'An error occurred while bulk updating tasks',
                 error: process.env.NODE_ENV === 'production' ? undefined : error.message
             });
         }

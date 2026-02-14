@@ -24,6 +24,8 @@ class JobSeekerController {
 
     this.update = this.update.bind(this);
 
+    this.bulkUpdate = this.bulkUpdate.bind(this);
+
     this.delete = this.delete.bind(this);
 
     this.addNote = this.addNote.bind(this);
@@ -617,7 +619,90 @@ class JobSeekerController {
 
   }
 
+  // Bulk update job seekers
+  async bulkUpdate(req, res) {
+    try {
+      console.log('=== BULK UPDATE REQUEST START ===');
+      console.log('Request body:', JSON.stringify(req.body, null, 2));
+      console.log('User ID:', req.user?.id);
+      console.log('User:', req.user);
+      
+      const { ids, updates } = req.body;
 
+      // Validate input
+      if (!ids || !Array.isArray(ids) || ids.length === 0) {
+        console.error('Validation failed: IDs array is required and must not be empty');
+        return res.status(400).json({
+          success: false,
+          message: 'IDs array is required and must not be empty'
+        });
+      }
+
+      if (!updates || typeof updates !== 'object') {
+        console.error('Validation failed: Updates object is required');
+        return res.status(400).json({
+          success: false,
+          message: 'Updates object is required'
+        });
+      }
+
+      const userId = req.user.id;
+      const userRole = req.user.role;
+      console.log('Processing bulk update for user:', userId, 'role:', userRole);
+      console.log('Job Seeker IDs to update:', ids);
+      console.log('Updates to apply:', JSON.stringify(updates, null, 2));
+
+      const results = {
+        successful: [],
+        failed: [],
+        errors: []
+      };
+
+      // Update each job seeker
+      for (const id of ids) {
+        try {
+          console.log(`\n--- Processing job seeker ${id} ---`);
+          const updateData = JSON.parse(JSON.stringify(updates));
+          console.log(`Calling jobSeekerModel.update(${id}, updates, null)`);
+          
+          const jobSeeker = await this.jobSeekerModel.update(id, updateData, null);
+          
+          if (jobSeeker) {
+            results.successful.push(id);
+            console.log(`✅ Successfully updated job seeker ${id}`);
+          } else {
+            results.failed.push(id);
+            results.errors.push({ id, error: 'Job seeker not found or permission denied' });
+            console.error(`❌ Failed to update job seeker ${id}: not found or permission denied`);
+          }
+        } catch (error) {
+          results.failed.push(id);
+          const errorMsg = error.message || 'Unknown error';
+          results.errors.push({ id, error: errorMsg });
+          console.error(`❌ Error updating job seeker ${id}:`, errorMsg);
+        }
+      }
+
+      console.log('\n=== BULK UPDATE RESULTS ===');
+      console.log(`Successful: ${results.successful.length}/${ids.length}`);
+      console.log(`Failed: ${results.failed.length}/${ids.length}`);
+      console.log('=== BULK UPDATE REQUEST END ===\n');
+
+      res.status(200).json({
+        success: true,
+        message: `Updated ${results.successful.length} of ${ids.length} job seekers`,
+        results
+      });
+    } catch (error) {
+      console.error('=== BULK UPDATE FATAL ERROR ===');
+      console.error('Error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'An error occurred while bulk updating job seekers',
+        error: process.env.NODE_ENV === 'production' ? undefined : error.message
+      });
+    }
+  }
 
   // Delete job seeker by ID
 

@@ -11,6 +11,7 @@ class JobController {
         this.getAll = this.getAll.bind(this);
         this.getById = this.getById.bind(this);
         this.update = this.update.bind(this);
+        this.bulkUpdate = this.bulkUpdate.bind(this);
         this.delete = this.delete.bind(this);
         this.addNote = this.addNote.bind(this);
         this.getNotes = this.getNotes.bind(this);
@@ -241,6 +242,106 @@ class JobController {
             res.status(500).json({
                 success: false,
                 message,
+                error: process.env.NODE_ENV === 'production' ? undefined : error.message
+            });
+        }
+    }
+
+    // Bulk update jobs
+    async bulkUpdate(req, res) {
+        try {
+            console.log('=== BULK UPDATE REQUEST START ===');
+            console.log('Request body:', JSON.stringify(req.body, null, 2));
+            console.log('User ID:', req.user?.id);
+            console.log('User:', req.user);
+            
+            const { ids, updates } = req.body;
+
+            // Validate input
+            if (!ids || !Array.isArray(ids) || ids.length === 0) {
+                console.error('Validation failed: IDs array is required and must not be empty');
+                return res.status(400).json({
+                    success: false,
+                    message: 'IDs array is required and must not be empty'
+                });
+            }
+
+            if (!updates || typeof updates !== 'object') {
+                console.error('Validation failed: Updates object is required');
+                return res.status(400).json({
+                    success: false,
+                    message: 'Updates object is required'
+                });
+            }
+
+            // Get the current user's ID and role from the auth middleware
+            const userId = req.user.id;
+            const userRole = req.user.role;
+            console.log('Processing bulk update for user:', userId, 'role:', userRole);
+            console.log('Job IDs to update:', ids);
+            console.log('Updates to apply:', JSON.stringify(updates, null, 2));
+
+            const results = {
+                successful: [],
+                failed: [],
+                errors: []
+            };
+
+            // Update each job
+            for (const id of ids) {
+                try {
+                    console.log(`\n--- Processing job ${id} ---`);
+                    // Clone updates to avoid mutations affecting other iterations
+                    const updateData = JSON.parse(JSON.stringify(updates));
+                    console.log(`Calling jobModel.update(${id}, updates, null)`);
+                    console.log(`Updates object:`, JSON.stringify(updates, null, 2));
+                    
+                    const job = await this.jobModel.update(id, updateData, null);
+                    
+                    if (job) {
+                        results.successful.push(id);
+                        console.log(`✅ Successfully updated job ${id}`);
+                        console.log(`Updated job data:`, JSON.stringify({
+                            id: job.id,
+                            job_title: job.job_title,
+                            custom_fields: job.custom_fields
+                        }, null, 2));
+                    } else {
+                        results.failed.push(id);
+                        results.errors.push({ id, error: 'Job not found or permission denied' });
+                        console.error(`❌ Failed to update job ${id}: not found or permission denied`);
+                    }
+                } catch (error) {
+                    results.failed.push(id);
+                    const errorMsg = error.message || 'Unknown error';
+                    const errorStack = error.stack || 'No stack trace';
+                    results.errors.push({ id, error: errorMsg });
+                    console.error(`❌ Error updating job ${id}:`, errorMsg);
+                    console.error(`Error stack:`, errorStack);
+                    console.error(`Full error object:`, error);
+                }
+            }
+
+            console.log('\n=== BULK UPDATE RESULTS ===');
+            console.log(`Successful: ${results.successful.length}/${ids.length}`);
+            console.log(`Failed: ${results.failed.length}/${ids.length}`);
+            console.log('Results:', JSON.stringify(results, null, 2));
+            console.log('=== BULK UPDATE REQUEST END ===\n');
+
+            res.status(200).json({
+                success: true,
+                message: `Updated ${results.successful.length} of ${ids.length} jobs`,
+                results
+            });
+        } catch (error) {
+            console.error('=== BULK UPDATE FATAL ERROR ===');
+            console.error('Error:', error);
+            console.error('Error message:', error.message);
+            console.error('Error stack:', error.stack);
+            console.error('=== END FATAL ERROR ===');
+            res.status(500).json({
+                success: false,
+                message: 'An error occurred while bulk updating jobs',
                 error: process.env.NODE_ENV === 'production' ? undefined : error.message
             });
         }

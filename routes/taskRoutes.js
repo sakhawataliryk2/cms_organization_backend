@@ -28,6 +28,9 @@ function createTaskRouter(taskController, authMiddleware) {
     // (admins can update any, regular users only their own or assigned to them)
     router.put('/:id', taskController.update);
 
+    // Bulk update tasks (must be before /:id route)
+    router.post('/bulk-update', taskController.bulkUpdate);
+
     // Delete task by ID 
     // (admins can delete any, regular users only their own)
     router.delete('/:id', taskController.delete);

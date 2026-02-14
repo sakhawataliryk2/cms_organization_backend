@@ -40,6 +40,9 @@ function createPlacementRouter(placementController, authMiddleware) {
     // (admins can update any, regular users only their own)
     router.put('/:id', placementController.update);
 
+    // Bulk update placements (must be before /:id route)
+    router.post('/bulk-update', placementController.bulkUpdate);
+
     // Delete placement by ID
     // (admins can delete any, regular users only their own)
     router.delete('/:id', placementController.delete);
