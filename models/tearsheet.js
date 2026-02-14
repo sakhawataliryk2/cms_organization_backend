@@ -173,6 +173,7 @@ class Tearsheet {
           COUNT(DISTINCT thm.hiring_manager_id) as hiring_manager_count,
           COUNT(DISTINCT tj.job_id) as job_order_count,
           COUNT(DISTINCT tl.lead_id) as lead_count,
+          COUNT(DISTINCT tt.task_id) as task_count,
           (SELECT COUNT(DISTINCT org_id) FROM (
             SELECT organization_id AS org_id
             FROM tearsheet_organizations
@@ -197,6 +198,7 @@ class Tearsheet {
         LEFT JOIN tearsheet_hiring_managers thm ON t.id = thm.tearsheet_id
         LEFT JOIN tearsheet_jobs tj ON t.id = tj.tearsheet_id
         LEFT JOIN tearsheet_leads tl ON t.id = tl.tearsheet_id
+        LEFT JOIN tearsheet_tasks tt ON t.id = tt.tearsheet_id
         GROUP BY t.id, t.name, t.visibility, t.created_at, u.name
         ORDER BY t.created_at DESC
       `);
@@ -222,6 +224,7 @@ class Tearsheet {
           COUNT(DISTINCT thm.hiring_manager_id) as hiring_manager_count,
           COUNT(DISTINCT tj.job_id) as job_order_count,
           COUNT(DISTINCT tl.lead_id) as lead_count,
+          COUNT(DISTINCT tt.task_id) as task_count,
           (SELECT COUNT(DISTINCT org_id) FROM (
             SELECT organization_id AS org_id
             FROM tearsheet_organizations
@@ -246,6 +249,7 @@ class Tearsheet {
         LEFT JOIN tearsheet_hiring_managers thm ON t.id = thm.tearsheet_id
         LEFT JOIN tearsheet_jobs tj ON t.id = tj.tearsheet_id
         LEFT JOIN tearsheet_leads tl ON t.id = tl.tearsheet_id
+        LEFT JOIN tearsheet_tasks tt ON t.id = tt.tearsheet_id
         WHERE t.id = $1
         GROUP BY t.id, t.name, t.visibility, t.created_at, t.updated_at, u.name, u.id
       `, [id]);
@@ -297,6 +301,15 @@ class Tearsheet {
             JOIN leads l ON tl.lead_id = l.id
             WHERE tl.tearsheet_id = $1
             ORDER BY l.first_name, l.last_name
+          `;
+          break;
+        case 'tasks':
+          query = `
+            SELECT t.id, t.title as name, t.status, t.priority, t.due_date, t.owner, t.assigned_to
+            FROM tearsheet_tasks tt
+            JOIN tasks t ON tt.task_id = t.id
+            WHERE tt.tearsheet_id = $1
+            ORDER BY t.due_date DESC NULLS LAST, t.created_at DESC
           `;
           break;
         default:

@@ -507,29 +507,46 @@ class Placement {
             const oldResult = await client.query('SELECT * FROM placements WHERE id = $1', [id]);
             const oldState = oldResult.rows[0] || null;
 
-            // Handle custom_fields - accept both customFields and custom_fields, convert object to JSON string for JSONB
+            // Handle custom_fields - merge with existing instead of replacing
             let customFieldsJson = undefined; // Use undefined so COALESCE doesn't update if not provided
             const finalCustomFields = custom_fields !== undefined ? custom_fields : placementData.customFields;
             
             if (finalCustomFields !== undefined) {
                 if (finalCustomFields === null) {
                     customFieldsJson = null;
-                } else if (typeof finalCustomFields === 'string') {
-                    // It's already a string, validate it's valid JSON
+                } else {
                     try {
-                        JSON.parse(finalCustomFields);
-                        customFieldsJson = finalCustomFields;
+                        // Get existing custom_fields from database
+                        let existingCustomFields = {};
+                        if (oldState && oldState.custom_fields) {
+                            existingCustomFields = typeof oldState.custom_fields === 'string'
+                                ? JSON.parse(oldState.custom_fields || '{}')
+                                : (oldState.custom_fields || {});
+                        }
+
+                        // Parse the incoming custom fields
+                        let updateCustomFields = {};
+                        if (typeof finalCustomFields === 'string') {
+                            updateCustomFields = JSON.parse(finalCustomFields);
+                        } else if (typeof finalCustomFields === 'object' && !Array.isArray(finalCustomFields)) {
+                            updateCustomFields = finalCustomFields;
+                        }
+
+                        // Merge existing with new custom fields (new fields override existing ones)
+                        const mergedCustomFields = { ...existingCustomFields, ...updateCustomFields };
+                        
+                        // Stringify for JSONB storage
+                        customFieldsJson = JSON.stringify(mergedCustomFields);
                     } catch (e) {
-                        console.error("Invalid JSON string in custom_fields:", e);
-                        customFieldsJson = null;
-                    }
-                } else if (typeof finalCustomFields === 'object' && !Array.isArray(finalCustomFields)) {
-                    // It's a valid object, stringify it for JSONB storage
-                    try {
-                        customFieldsJson = JSON.stringify(finalCustomFields);
-                    } catch (e) {
-                        console.error("Error stringifying custom_fields:", e);
-                        customFieldsJson = null;
+                        console.error("Error processing custom_fields:", e);
+                        // If merging fails, try to use the incoming data as-is
+                        if (typeof finalCustomFields === 'string') {
+                            customFieldsJson = finalCustomFields;
+                        } else if (typeof finalCustomFields === 'object' && !Array.isArray(finalCustomFields)) {
+                            customFieldsJson = JSON.stringify(finalCustomFields);
+                        } else {
+                            customFieldsJson = null;
+                        }
                     }
                 }
             }

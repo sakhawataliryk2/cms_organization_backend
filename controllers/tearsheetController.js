@@ -124,11 +124,11 @@ class TearsheetController {
         });
       }
 
-      const validTypes = ['job_seekers', 'hiring_managers', 'jobs', 'leads'];
+      const validTypes = ['job_seekers', 'hiring_managers', 'jobs', 'leads', 'tasks'];
       if (!validTypes.includes(type)) {
         return res.status(400).json({
           success: false,
-          message: "Invalid type. Must be one of: job_seekers, hiring_managers, jobs, leads",
+          message: "Invalid type. Must be one of: job_seekers, hiring_managers, jobs, leads, tasks",
         });
       }
 
