@@ -164,10 +164,6 @@ class JobController {
         try {
             const { id } = req.params;
 
-            // Get the current user's ID from the auth middleware
-            const userId = req.user.id;
-            const userRole = req.user.role;
-
             const job = await this.jobModel.getById(id, null);
 
             if (!job) {

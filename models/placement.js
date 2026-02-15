@@ -872,7 +872,9 @@ class Placement {
             jobSeekerName: row.full_name || `${row.first_name || ''} ${row.last_name || ''}`.trim(),
             jobSeekerEmail: row.job_seeker_email,
             jobSeekerPhone: row.job_seeker_phone,
-            createdByName: row.created_by_name
+            createdByName: row.created_by_name,
+            archivedAt: row.archived_at,
+            archiveReason: row.archive_reason,
         };
     }
 }

@@ -14,7 +14,7 @@ const createPool = () => {
     max: parseInt(process.env.DB_POOL_MAX, 10) || 5, // Keep low to avoid "connection slots reserved for SUPERUSER" on limited DB plans
     idleTimeoutMillis: parseInt(process.env.DB_IDLE_TIMEOUT) || 30000, // Reduced for serverless
     connectionTimeoutMillis:
-      parseInt(process.env.DB_CONNECTION_TIMEOUT) || 5000,
+      parseInt(process.env.DB_CONNECTION_TIMEOUT) || 60000, // 60s for long ops (e.g. archive cascade)
     maxUses: 7500,
   });
 

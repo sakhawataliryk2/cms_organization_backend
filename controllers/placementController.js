@@ -147,8 +147,6 @@ class PlacementController {
     async getById(req, res) {
         try {
             const { id } = req.params;
-            const userId = req.user.id;
-            const userRole = req.user.role;
 
             const placement = await this.placementModel.findById(id);
 
@@ -158,7 +156,8 @@ class PlacementController {
                     message: 'Placement not found'
                 });
             }
-
+            console.log("Placement:", placement);
+            console.log("Placement archived at:", placement.archivedAt);
             res.status(200).json({
                 success: true,
                 placement

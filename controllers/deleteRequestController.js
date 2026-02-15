@@ -379,11 +379,13 @@ class DeleteRequestController {
         });
       }
 
-      // Approve the delete request
-      const approvedRequest = await this.deleteRequestModel.approve(id, userId);
+      // Execute the deletion (archive the record) FIRST, then mark as approved.
+      // This way if executeDeletion fails (e.g. timeout), the request stays pending and can be retried.
+      const requestWithReviewer = { ...deleteRequest, reviewed_by: userId };
+      await this.executeDeletion(requestWithReviewer);
 
-      // Execute the deletion (archive the record)
-      await this.executeDeletion(approvedRequest);
+      // Now mark the delete request as approved
+      const approvedRequest = await this.deleteRequestModel.approve(id, userId);
 
       // Send approval email to requester
       try {

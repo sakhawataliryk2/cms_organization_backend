@@ -1077,6 +1077,8 @@ class Organization {
         const client = await this.pool.connect();
         try {
             await client.query('BEGIN');
+            // Allow long-running cascade (default server timeouts can be 30–60s and kill the connection)
+            await client.query("SET statement_timeout = '120000'"); // 2 minutes
 
             // Ensure id is an integer for database queries
             const orgId = typeof id === 'string' ? parseInt(id, 10) : id;
@@ -1141,16 +1143,21 @@ class Organization {
                 RETURNING *
             `, [orgId, timestamp, archiveReason]);
 
-            // Add history entry
+            // Add history entry (params: $1=org_id, $2=performed_by, $3=details)
             await client.query(`
                 INSERT INTO organization_history (organization_id, action, details, performed_by)
                 VALUES ($1, 'ARCHIVE_CASCADE', $3, $2)
-            `, [id, 'ARCHIVE_CASCADE', JSON.stringify({ reason: archiveReason, original_record: result.rows[0] }), userId]);
+            `, [orgId, userId, JSON.stringify({ reason: archiveReason, original_record: result.rows[0] })]);
 
             await client.query('COMMIT');
             return result.rows[0];
         } catch (error) {
-            await client.query('ROLLBACK');
+            try {
+                await client.query('ROLLBACK');
+            } catch (rollbackErr) {
+                // Connection may already be dead; log but don't mask original error
+                console.error("Rollback failed (connection may be closed):", rollbackErr.message);
+            }
             console.error("Error in archiveCascade:", error);
             throw error;
         } finally {
