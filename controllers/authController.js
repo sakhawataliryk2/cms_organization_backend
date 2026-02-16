@@ -3,7 +3,7 @@ const jwt = require("jsonwebtoken");
 const bcrypt = require("bcrypt");
 
 const { sendMail } = require("../services/emailService");
-const baseUrl = "https://cms-organization.vercel.app";
+const baseUrl = process.env.FRONTEND_URL || "http://localhost:3000";
 class AuthController {
   constructor(pool) {
     this.userModel = new User(pool);

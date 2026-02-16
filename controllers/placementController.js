@@ -486,7 +486,7 @@ class PlacementController {
                                     <h3 style="color: #374151;">Note Text:</h3>
                                     <div style="background-color: #f9fafb; padding: 15px; border-radius: 5px; white-space: pre-wrap;">${text}</div>
                                     <p style="margin-top: 25px;">
-                                        <a href="${process.env.FRONTEND_URL ? `${process.env.FRONTEND_URL}/dashboard/placements/view?id=${id}&tab=notes` : `https://cms-organization.vercel.app/dashboard/placements/view?id=${id}&tab=notes`}"
+                                        <a href="${process.env.FRONTEND_URL ? `${process.env.FRONTEND_URL}/dashboard/placements/view?id=${id}&tab=notes` : `${process.env.NEXT_PUBLIC_BASE_URL}/dashboard/placements/view?id=${id}&tab=notes`}"
                                            style="color: #2563eb; text-decoration: underline;"
                                            target="_blank"
                                         >View This Note Online</a>

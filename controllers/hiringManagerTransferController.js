@@ -102,7 +102,7 @@ class HiringManagerTransferController {
   }
 
   async sendTransferRequestEmail(transfer, requester) {
-    const baseUrl = process.env.FRONTEND_URL || "https://cms-organization.vercel.app";
+    const baseUrl = process.env.FRONTEND_URL || "http://localhost:3000";
     const approvalUrl = `${baseUrl}/dashboard/hiring-managers/transfer/${transfer.id}/approve`;
     const denyUrl = `${baseUrl}/dashboard/hiring-managers/transfer/${transfer.id}/deny`;
 

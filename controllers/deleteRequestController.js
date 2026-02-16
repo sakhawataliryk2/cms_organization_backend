@@ -12,6 +12,7 @@ const { sendMail } = require("../services/emailService");
 
 const PAYROLL_EMAIL = process.env.PAYROLL_EMAIL || "payroll@completestaffingsolutions.com";
 // const PAYROLL_EMAIL = "yasirrehman274@gmail.com";
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
 
 let scheduledTasksTableInitialized = false;
 let deleteRequestTablesInitialized = false;
@@ -213,7 +214,7 @@ class DeleteRequestController {
   }
 
   async sendDeleteRequestEmail(deleteRequest, requester, options = {}) {
-    const baseUrl = process.env.FRONTEND_URL || "https://cms-organization.vercel.app";
+    const baseUrl = process.env.FRONTEND_URL || "http://localhost:3000";
     let recordPath = "organizations";
     if (deleteRequest.record_type === "hiring_manager") {
       recordPath = "hiring-managers";
