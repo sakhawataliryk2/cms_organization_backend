@@ -1,7 +1,5 @@
 // routes/placementRoutes.js
 const express = require('express');
-const uploadOrganizationDocument = require('../middleware/uploadOrganizationDocument');
-
 function createPlacementRouter(placementController, authMiddleware) {
     const router = express.Router();
     const { verifyToken, checkRole } = authMiddleware;
@@ -49,7 +47,7 @@ function createPlacementRouter(placementController, authMiddleware) {
 
     // Document routes
     router.get('/:id/documents', placementController.getDocuments);
-    router.post('/:id/documents/upload', uploadOrganizationDocument.single('file'), placementController.uploadDocument);
+    router.post('/:id/documents/upload', placementController.uploadDocument);
     router.post('/:id/documents', placementController.addDocument);
     router.get('/:id/documents/:documentId', placementController.getDocument);
     router.put('/:id/documents/:documentId', placementController.updateDocument);

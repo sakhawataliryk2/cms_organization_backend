@@ -1,6 +1,4 @@
 const express = require('express');
-const uploadOrganizationDocument = require('../middleware/uploadOrganizationDocument');
-
 function createLeadRouter(leadController, authMiddleware) {
     const router = express.Router();
     const { verifyToken, checkRole } = authMiddleware;
@@ -39,7 +37,7 @@ function createLeadRouter(leadController, authMiddleware) {
 
     // Document routes (same as organization)
     router.get('/:id/documents', leadController.getDocuments);
-    router.post('/:id/documents/upload', uploadOrganizationDocument.single('file'), leadController.uploadDocument);
+    router.post('/:id/documents/upload', leadController.uploadDocument);
     router.post('/:id/documents', leadController.addDocument);
     router.get('/:id/documents/:documentId', leadController.getDocument);
     router.put('/:id/documents/:documentId', leadController.updateDocument);
