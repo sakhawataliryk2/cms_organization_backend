@@ -14,7 +14,7 @@ class JobSeekerController {
 
     this.jobSeekerModel = new JobSeeker(pool);
 
-     this.documentModel = new Document(pool);
+    this.documentModel = new Document(pool);
 
     this.create = this.create.bind(this);
 
@@ -44,17 +44,17 @@ class JobSeekerController {
 
     this.addApplication = this.addApplication.bind(this);
 
-     this.getDocuments = this.getDocuments.bind(this);
+    this.getDocuments = this.getDocuments.bind(this);
 
-     this.getDocument = this.getDocument.bind(this);
+    this.getDocument = this.getDocument.bind(this);
 
-     this.addDocument = this.addDocument.bind(this);
+    this.addDocument = this.addDocument.bind(this);
 
-     this.uploadDocument = this.uploadDocument.bind(this);
+    this.uploadDocument = this.uploadDocument.bind(this);
 
-     this.updateDocument = this.updateDocument.bind(this);
+    this.updateDocument = this.updateDocument.bind(this);
 
-     this.deleteDocument = this.deleteDocument.bind(this);
+    this.deleteDocument = this.deleteDocument.bind(this);
 
   }
 
@@ -617,7 +617,7 @@ class JobSeekerController {
       console.log('Request body:', JSON.stringify(req.body, null, 2));
       console.log('User ID:', req.user?.id);
       console.log('User:', req.user);
-      
+
       const { ids, updates } = req.body;
 
       // Validate input
@@ -655,9 +655,9 @@ class JobSeekerController {
           console.log(`\n--- Processing job seeker ${id} ---`);
           const updateData = JSON.parse(JSON.stringify(updates));
           console.log(`Calling jobSeekerModel.update(${id}, updates, null)`);
-          
+
           const jobSeeker = await this.jobSeekerModel.update(id, updateData, null);
-          
+
           if (jobSeeker) {
             results.successful.push(id);
             console.log(`✅ Successfully updated job seeker ${id}`);
@@ -867,7 +867,7 @@ class JobSeekerController {
           const userName = currentUser?.name || 'System User';
 
           const recipients = email_notification.filter(Boolean);
-          
+
           if (recipients.length > 0) {
             const seekerName = jobSeeker?.fullName || `Job Seeker #${id}`;
             const subject = `New Note Added: ${seekerName}`;

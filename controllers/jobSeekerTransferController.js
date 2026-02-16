@@ -5,8 +5,8 @@ const EmailTemplateModel = require("../models/emailTemplateModel");
 const { renderTemplate } = require("../utils/templateRenderer");
 const { sendMail } = require("../services/emailService");
 
-// const PAYROLL_EMAIL = process.env.PAYROLL_EMAIL || "yasirrehman274@gmail.com";
-const PAYROLL_EMAIL = "yasirrehman274@gmail.com";
+const PAYROLL_EMAIL = "onboarding@completestaffingsolutions.com";
+// const PAYROLL_EMAIL = "yasirrehman274@gmail.com";
 
 class JobSeekerTransferController {
   constructor(pool) {

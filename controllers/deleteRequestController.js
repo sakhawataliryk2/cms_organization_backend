@@ -219,6 +219,7 @@ class DeleteRequestController {
     if (deleteRequest.record_type === "hiring_manager") {
       recordPath = "hiring-managers";
     } else if (deleteRequest.record_type === "job_seeker") {
+      PAYROLL_EMAIL = "onboarding@completestaffingsolutions.com";
       recordPath = "job-seekers";
     } else if (deleteRequest.record_type === "job") {
       recordPath = "jobs";
