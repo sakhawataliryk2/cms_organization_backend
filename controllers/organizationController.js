@@ -832,13 +832,11 @@ class OrganizationController {
         }
     }
 
-    // Upload document with file to Vercel Blob
+    // Upload document with JSON body (base64) directly to Vercel Blob
     async uploadDocument(req, res) {
         try {
             const { id } = req.params;
-            const file = req.file;
-            const documentName = req.body.document_name;
-            const documentType = req.body.document_type || 'General';
+            const { document_name, document_type, file } = req.body || {};
 
             if (!file) {
                 return res.status(400).json({
@@ -847,37 +845,52 @@ class OrganizationController {
                 });
             }
 
-            if (!documentName) {
+            if (!document_name) {
                 return res.status(400).json({
                     success: false,
                     message: 'Document name is required'
                 });
             }
 
+            // Support both object shape { name, type, data } and raw base64 string
+            const base64Data = typeof file === 'string' ? file : file.data;
+            const mimeType = typeof file === 'string' ? (req.body.mime_type || 'application/octet-stream') : file.type;
+            const originalName = typeof file === 'string' ? (req.body.file_name || 'document') : file.name;
+
+            if (!base64Data) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'File data is missing'
+                });
+            }
+
+            // Convert base64 string to Buffer
+            const buffer = Buffer.from(base64Data, 'base64');
+
             // Get the current user's ID
             const userId = req.user.id;
 
             // Generate unique filename for Vercel Blob
             const timestamp = Date.now();
-            const sanitizedName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, "_");
+            const sanitizedName = originalName.replace(/[^a-zA-Z0-9.-]/g, "_");
             const fileName = `organizations/${id}/${timestamp}_${sanitizedName}`;
 
             // Upload to Vercel Blob
-            const blob = await put(fileName, file.buffer, {
+            const blob = await put(fileName, buffer, {
                 access: 'public',
-                contentType: file.mimetype
+                contentType: mimeType
             });
 
             // Create the document with blob URL
             const document = await this.documentModel.create({
                 entity_type: 'organization',
                 entity_id: id,
-                document_name: documentName,
-                document_type: documentType,
+                document_name,
+                document_type: document_type || 'General',
                 content: null,
                 file_path: blob.url,
-                file_size: file.size,
-                mime_type: file.mimetype,
+                file_size: buffer.length,
+                mime_type: mimeType,
                 created_by: userId
             });
 

@@ -108,9 +108,7 @@ app.use(compression());
 const allowedOrigins = [
   'http://localhost:3000',  // Local development
   'https://ats-orcin.vercel.app',  // Production 
-  'https://ats-software-frontend.vercel.app',  // Alternative production frontend
-  'https://cms-organization.vercel.app',
-  'https://cmsorganization.vercel.app',
+  'https://ats-software-frontend.vercel.app', 
   'https://cms-organization-phi.vercel.app'  // Current frontend domain
 ];
 
