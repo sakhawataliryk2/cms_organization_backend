@@ -390,24 +390,15 @@ class JobSeekerController {
 
 
 
-  // Get all job seekers
+  // Get all job seekers (archived param: 'true' = only archived, 'false' = exclude archived, omit = all - like jobs)
 
   async getAll(req, res) {
 
     try {
 
-      // Get the current user's ID from the auth middleware
-
-      const userId = req.user.id;
-
-      const userRole = req.user.role;
-
-
-
-      // archived=true query param returns only archived job seekers (for archived page)
-      const archivedOnly = req.query.archived === "true";
-
-      const jobSeekers = await this.jobSeekerModel.getAll(null, archivedOnly);
+      const archivedParam = req.query?.archived;
+      const archivedFilter = archivedParam === 'true' ? true : archivedParam === 'false' ? false : null;
+      const jobSeekers = await this.jobSeekerModel.getAll(null, archivedFilter);
 
 
 

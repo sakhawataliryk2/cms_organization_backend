@@ -282,8 +282,8 @@ class JobSeeker {
     }
 
     // Get all job seekers (with optional filtering by created_by user and archived state)
-    // archivedOnly: true = only archived, false/undefined = exclude archived (default)
-    async getAll(userId = null, archivedOnly = false) {
+    // archivedFilter: true = only archived, false = exclude archived, null/undefined = return all (like jobs)
+    async getAll(userId = null, archivedFilter = null) {
         const client = await this.pool.connect();
         try {
             let query = `
@@ -304,9 +304,9 @@ class JobSeeker {
                 paramCount++;
             }
 
-            if (archivedOnly) {
+            if (archivedFilter === true) {
                 conditions.push(`(js.status = 'Archived' OR js.archived_at IS NOT NULL)`);
-            } else {
+            } else if (archivedFilter === false) {
                 conditions.push(`(js.status IS NULL OR js.status != 'Archived')`);
                 conditions.push(`js.archived_at IS NULL`);
             }

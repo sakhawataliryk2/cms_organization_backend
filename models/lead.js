@@ -1,5 +1,35 @@
 const bcrypt = require('bcrypt');
 
+// Keys to exclude from history (internal relationship IDs - redundant with user-facing Job/Contact/Candidate fields)
+const HISTORY_EXCLUDED_CUSTOM_FIELD_PREFIXES = ['_relationship_'];
+
+function sanitizeCustomFieldsForHistory(obj) {
+    if (!obj || typeof obj !== 'object') return obj;
+    const sanitized = { ...obj };
+    Object.keys(sanitized).forEach(key => {
+        if (HISTORY_EXCLUDED_CUSTOM_FIELD_PREFIXES.some(prefix => key.startsWith(prefix))) {
+            delete sanitized[key];
+        }
+    });
+    return sanitized;
+}
+
+function sanitizeHistoryDetailsForUpdate(before, after) {
+    const b = before && typeof before === 'object' ? { ...before } : before;
+    const a = after && typeof after === 'object' ? { ...after } : after;
+    if (b && b.custom_fields) {
+        b.custom_fields = sanitizeCustomFieldsForHistory(
+            typeof b.custom_fields === 'string' ? JSON.parse(b.custom_fields || '{}') : b.custom_fields
+        );
+    }
+    if (a && a.custom_fields) {
+        a.custom_fields = sanitizeCustomFieldsForHistory(
+            typeof a.custom_fields === 'string' ? JSON.parse(a.custom_fields || '{}') : a.custom_fields
+        );
+    }
+    return { before: b, after: a };
+}
+
 class Lead {
     constructor(pool) {
         this.pool = pool;
@@ -675,12 +705,13 @@ class Lead {
                 VALUES ($1, $2, $3, $4)
             `;
 
+            const { before: sanitizedBefore, after: sanitizedAfter } = sanitizeHistoryDetailsForUpdate(oldState, updatedLead);
             const historyValues = [
                 id,
                 'UPDATE',
                 JSON.stringify({
-                    before: oldState,
-                    after: updatedLead
+                    before: sanitizedBefore,
+                    after: sanitizedAfter
                 }),
                 userId || lead.created_by
             ];
@@ -891,7 +922,20 @@ class Lead {
             `;
 
             const result = await client.query(query, [leadId]);
-            return result.rows;
+            return result.rows.map(row => {
+                if (row.details && row.action === 'UPDATE') {
+                    try {
+                        const details = typeof row.details === 'string' ? JSON.parse(row.details) : row.details;
+                        if (details.before && details.after) {
+                            const { before, after } = sanitizeHistoryDetailsForUpdate(details.before, details.after);
+                            return { ...row, details: { ...details, before, after } };
+                        }
+                    } catch (e) {
+                        // If parse/sanitize fails, return original
+                    }
+                }
+                return row;
+            });
         } catch (error) {
             throw error;
         } finally {

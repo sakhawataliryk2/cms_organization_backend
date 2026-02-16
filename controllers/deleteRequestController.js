@@ -833,10 +833,18 @@ class DeleteRequestController {
           [deleteRequest.record_id]
         );
 
-        await this.jobSeekerModel.addNote(
-          deleteRequest.record_id,
-          "Record archived following payroll approval",
-          deleteRequest.reviewed_by
+        // Match job deletion behavior: write the archive note within the same transaction
+        await client.query(
+          `
+          INSERT INTO job_seeker_notes (job_seeker_id, text, note_type, created_by)
+          VALUES ($1, $2, $3, $4)
+        `,
+          [
+            deleteRequest.record_id,
+            "Record archived following payroll approval",
+            "General Note",
+            deleteRequest.reviewed_by,
+          ]
         );
 
         await client.query(
