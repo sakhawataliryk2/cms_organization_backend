@@ -105,4 +105,21 @@ function createJobSeekerRouter(jobSeekerController, authMiddleware) {
     return router;
 }
 
+// Delete request routes for job seekers - same structure as tasks/jobs for consistent behavior
+function createJobSeekerDeleteRequestRouter(deleteRequestController, authMiddleware) {
+    const router = express.Router();
+    const { verifyToken } = authMiddleware;
+
+    router.use(verifyToken);
+
+    router.get('/delete/:id', deleteRequestController.getById);
+    router.get('/:id/delete-request', deleteRequestController.getByRecord);
+    router.post('/:id/delete-request', deleteRequestController.create);
+    router.post('/delete/:id/approve', deleteRequestController.approve);
+    router.post('/delete/:id/deny', deleteRequestController.deny);
+
+    return router;
+}
+
 module.exports = createJobSeekerRouter;
+module.exports.createJobSeekerDeleteRequestRouter = createJobSeekerDeleteRequestRouter;

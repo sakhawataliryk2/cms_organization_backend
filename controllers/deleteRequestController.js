@@ -13,6 +13,9 @@ const { sendMail } = require("../services/emailService");
 const PAYROLL_EMAIL = process.env.PAYROLL_EMAIL || "payroll@completestaffingsolutions.com";
 // const PAYROLL_EMAIL = "yasirrehman274@gmail.com";
 
+let scheduledTasksTableInitialized = false;
+let deleteRequestTablesInitialized = false;
+
 // Optional escalation: when retry_count >= threshold, notify escalation email and add [ESCALATED] to subject
 const ESCALATION_ENABLED = process.env.DELETE_REQUEST_ESCALATION_ENABLED === "true";
 const ESCALATION_EMAIL = process.env.DELETE_REQUEST_ESCALATION_EMAIL || null;
@@ -38,13 +41,37 @@ class DeleteRequestController {
   }
 
   async initTables() {
+    if (deleteRequestTablesInitialized) return;
     try {
       console.log('Initializing delete request tables...');
       await this.deleteRequestModel.initTable();
       console.log('✅ Delete request tables initialized');
+      deleteRequestTablesInitialized = true;
     } catch (error) {
       console.error('❌ Error initializing delete request tables:', error);
       throw error;
+    }
+  }
+
+  /** Ensure scheduled_tasks table exists (used for archive cleanup jobs). No-op after first run per process. */
+  async ensureScheduledTasksTable() {
+    if (scheduledTasksTableInitialized) return;
+    const client = await this.pool.connect();
+    try {
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS scheduled_tasks (
+          id SERIAL PRIMARY KEY,
+          task_type VARCHAR(100) NOT NULL,
+          task_data JSONB,
+          scheduled_for TIMESTAMP NOT NULL,
+          status VARCHAR(50) DEFAULT 'pending',
+          completed_at TIMESTAMP,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      scheduledTasksTableInitialized = true;
+    } finally {
+      client.release();
     }
   }
 
@@ -366,13 +393,9 @@ class DeleteRequestController {
 
   async approve(req, res) {
     try {
-      // Ensure all tables are initialized before processing deletion
+      // Only ensure delete_requests table; other tables are initialized in executeDeletion per record_type
       await this.initTables();
-      await this.leadModel.initTable();
-      await this.taskModel.initTable();
-      await this.placementModel.initTable();
-      await this.jobModel.initTable();
-      
+
       const userId = req.user?.id;
       const { id } = req.params;
 
@@ -411,17 +434,15 @@ class DeleteRequestController {
       // Now mark the delete request as approved
       const approvedRequest = await this.deleteRequestModel.approve(id, userId);
 
-      // Send approval email to requester
-      try {
-        await this.sendApprovalEmail(approvedRequest);
-      } catch (emailError) {
-        console.error("Error sending approval email:", emailError);
-      }
-
-      return res.json({
+      // Respond immediately so UI doesn't hang; send approval email in background
+      res.json({
         success: true,
         message: "Delete request approved and record archived successfully",
         deleteRequest: approvedRequest,
+      });
+
+      this.sendApprovalEmail(approvedRequest).catch((emailError) => {
+        console.error("Error sending approval email:", emailError);
       });
     } catch (error) {
       console.error("Error approving delete request:", error);
@@ -604,17 +625,15 @@ class DeleteRequestController {
   }
 
   async executeDeletion(deleteRequest) {
-    // Ensure all tables are initialized before executing deletion
-    await this.leadModel.initTable();
-    await this.taskModel.initTable();
-    await this.placementModel.initTable();
-    await this.jobModel.initTable();
-    
+    // Only ensure scheduled_tasks exists (needed for cleanup jobs). Record-specific tables are inited per branch.
+    await this.ensureScheduledTasksTable();
+
     const client = await this.organizationModel.pool.connect();
     try {
       await client.query("BEGIN");
 
       if (deleteRequest.record_type === "organization") {
+        await this.organizationModel.initTable();
         // Check if this is a cascade deletion
         const isCascade = deleteRequest.action_type === 'cascade';
         
@@ -760,6 +779,7 @@ class DeleteRequestController {
           ]
         );
       } else if (deleteRequest.record_type === "hiring_manager") {
+        await this.hiringManagerModel.initTable();
         // Update hiring manager status to "Archived" and set archive_reason for Deletion
         await client.query(
           `
@@ -799,6 +819,7 @@ class DeleteRequestController {
           ]
         );
       } else if (deleteRequest.record_type === "job_seeker") {
+        await this.jobSeekerModel.initTable();
         await client.query(
           `
           UPDATE job_seekers
@@ -835,6 +856,7 @@ class DeleteRequestController {
           ]
         );
       } else if (deleteRequest.record_type === "job") {
+        await this.jobModel.initTable();
         // Update job status to "Archived" and set archived_at timestamp
         await client.query(
           `
@@ -879,6 +901,7 @@ class DeleteRequestController {
           ]
         );
       } else if (deleteRequest.record_type === "lead") {
+        await this.leadModel.initTable();
         // Update lead status to "Archived" and set archived_at timestamp
         await client.query(
           `
@@ -923,6 +946,7 @@ class DeleteRequestController {
           ]
         );
       } else if (deleteRequest.record_type === "task") {
+        await this.taskModel.initTable();
         // Update task status to "Archived" and set archived_at timestamp
         await client.query(
           `
@@ -967,6 +991,7 @@ class DeleteRequestController {
           ]
         );
       } else if (deleteRequest.record_type === "placement") {
+        await this.placementModel.initTable();
         // Update placement status to "Archived" and set archived_at timestamp
         await client.query(
           `

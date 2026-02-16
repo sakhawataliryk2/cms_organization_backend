@@ -1,5 +1,7 @@
 const bcrypt = require('bcrypt');
 
+let jobSeekerTablesInitialized = false;
+
 class JobSeeker {
     constructor(pool) {
         this.pool = pool;
@@ -7,6 +9,7 @@ class JobSeeker {
 
     // Initialize the job seekers table if it doesn't exist
     async initTable() {
+        if (jobSeekerTablesInitialized) return;
         let client;
         try {
             console.log('Initializing job seekers table if needed...');
@@ -107,6 +110,7 @@ class JobSeeker {
             `);
 
             console.log('✅ Job seekers tables initialized successfully');
+            jobSeekerTablesInitialized = true;
             return true;
         } catch (error) {
             console.error('❌ Error initializing job seekers tables:', error.message);

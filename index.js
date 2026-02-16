@@ -56,7 +56,9 @@ const createAuthRouter = require("./routes/authRoutes");
 const { createOrganizationRouter, createTransferRouter, createDeleteRequestRouter } = require("./routes/organizationRoutes");
 const { createJobRouter, createJobDeleteRequestRouter } = require("./routes/jobRoutes");
 const createJobXMLRouter = require("./routes/jobXMLRoutes");
-const createJobSeekerRouter = require("./routes/jobSeekerRoutes");
+const jobSeekerRoutes = require("./routes/jobSeekerRoutes");
+const createJobSeekerRouter = jobSeekerRoutes.default ?? jobSeekerRoutes;
+const createJobSeekerDeleteRequestRouter = jobSeekerRoutes.createJobSeekerDeleteRequestRouter;
 const createHiringManagerRouter = require("./routes/hiringManagerRoutes");
 const createHiringManagerTransferRouter = require("./routes/hiringManagerTransferRoutes");
 const createJobSeekerTransferRouter = require("./routes/jobSeekerTransferRoutes");
@@ -526,9 +528,7 @@ const applyDeleteRequestRoutes = (basePath) => {
 
 applyDeleteRequestRoutes("/api/organizations");
 applyDeleteRequestRoutes("/api/hiring-managers");
-applyDeleteRequestRoutes("/api/job-seekers");
-// Note: jobs, leads, tasks, and placements have their own specific delete request routers
-// defined below, so we don't use applyDeleteRequestRoutes for them
+// Job-seekers use dedicated delete router below (same pattern as jobs, leads, tasks, placements)
 
 // Setup organization routes with authentication
 app.use("/api/organizations", sanitizeInputs, (req, res, next) => {
@@ -591,6 +591,22 @@ app.use("/api/job-seekers/transfer", sanitizeInputs, (req, res, next) => {
     authMiddleware
   );
   router(req, res, next);
+});
+
+// Setup delete request routes for job seekers FIRST (same pattern as tasks/jobs)
+app.use("/api/job-seekers", sanitizeInputs, (req, res, next) => {
+  if (req.path.includes("/delete-request") ||
+      req.path.match(/\/delete\/\d+/) ||
+      req.path.match(/\/delete\/\d+\/(approve|deny)/)) {
+    const authMiddleware = { verifyToken: verifyToken(getPool()), checkRole };
+    const router = createJobSeekerDeleteRequestRouter(
+      getDeleteRequestController(),
+      authMiddleware
+    );
+    router(req, res, next);
+  } else {
+    next();
+  }
 });
 
 // Setup job seeker routes with authentication

@@ -1,10 +1,13 @@
 // models/deleteRequest.js
+let deleteRequestTableInitialized = false;
+
 class DeleteRequest {
   constructor(pool) {
     this.pool = pool;
   }
 
   async initTable() {
+    if (deleteRequestTableInitialized) return;
     const client = await this.pool.connect();
     try {
       console.log('Initializing delete_requests table...');
@@ -117,6 +120,7 @@ class DeleteRequest {
       }
       
       console.log('✅ delete_requests table initialization completed');
+      deleteRequestTableInitialized = true;
     } catch (error) {
       console.error('❌ Error initializing delete_requests table:', error);
       throw error;
