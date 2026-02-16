@@ -445,14 +445,31 @@ class TransferController {
       await this.transferDataHoles(client, sourceOrg, targetOrg);
 
       // 2. Move all affiliated contacts (hiring managers) from source to target
+      // Also update custom_fields "Organization" to new id when present and equal to source
+      const sourceOrgIdText = String(sourceOrgId);
+      const targetOrgIdText = String(targetOrgId);
       await client.query(
-        "UPDATE hiring_managers SET organization_id = $1 WHERE organization_id = $2",
-        [targetOrgId, sourceOrgId]
+        `UPDATE hiring_managers SET
+          organization_id = $1,
+          custom_fields = CASE
+            WHEN custom_fields IS NULL THEN NULL
+            WHEN custom_fields ? 'Organization' AND custom_fields->>'Organization' = $4
+            THEN jsonb_set(COALESCE(custom_fields, '{}'::jsonb), '{Organization}', to_jsonb($3::text))
+            ELSE custom_fields
+          END
+        WHERE organization_id = $2`,
+        [targetOrgId, sourceOrgId, targetOrgIdText, sourceOrgIdText]
       );
 
       // 3. Update jobs to point to target organization
       await client.query(
         "UPDATE jobs SET organization_id = $1 WHERE organization_id = $2",
+        [targetOrgId, sourceOrgId]
+      );
+
+      // 3b. Update placements that belonged to source org - placements have their own organization_id
+      await client.query(
+        "UPDATE placements SET organization_id = $1 WHERE organization_id = $2",
         [targetOrgId, sourceOrgId]
       );
 

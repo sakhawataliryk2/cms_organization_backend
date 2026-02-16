@@ -76,16 +76,45 @@ class DeleteRequest {
         console.log('✅ user_consent column added');
       }
 
+      // Check and add retry_count column (for retry cap strategy)
+      const retryCountCheck = await client.query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name='delete_requests' AND column_name='retry_count'
+      `);
+      if (retryCountCheck.rows.length === 0) {
+        console.log('Adding retry_count column to delete_requests table...');
+        await client.query(`
+          ALTER TABLE delete_requests 
+          ADD COLUMN retry_count INTEGER DEFAULT 0
+        `);
+        console.log('✅ retry_count column added');
+      }
+
       // Create indexes for faster lookups
       await client.query(`
         CREATE INDEX IF NOT EXISTS idx_delete_requests_record ON delete_requests(record_id, record_type)
       `);
       await client.query(`
-        CREATE INDEX IF NOT EXISTS idx_delete_requests_status ON delete_requests(status)
-      `);
-      await client.query(`
         CREATE INDEX IF NOT EXISTS idx_delete_requests_requested_by ON delete_requests(requested_by)
       `);
+      // Composite index for cron: WHERE status = 'pending' AND created_at <= ...
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS idx_delete_requests_status_created_at
+        ON delete_requests(status, created_at)
+      `);
+
+      // Partial unique index: only one pending request per (record_id, record_type)
+      try {
+        await client.query(`
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_delete_requests_one_pending_per_record
+          ON delete_requests(record_id, record_type)
+          WHERE status = 'pending'
+        `);
+      } catch (idxError) {
+        // May fail if duplicate pending rows exist; cron logic still enforces one-pending-per-record
+        console.warn('⚠️ Could not create unique index (duplicate pendings may exist):', idxError.message);
+      }
       
       console.log('✅ delete_requests table initialization completed');
     } catch (error) {
@@ -125,8 +154,10 @@ class DeleteRequest {
           action_type,
           dependencies_summary,
           user_consent,
-          status
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending')
+          status,
+          created_at,
+          updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending', (NOW() AT TIME ZONE 'UTC'), (NOW() AT TIME ZONE 'UTC'))
         RETURNING *
       `,
         [
@@ -270,6 +301,95 @@ class DeleteRequest {
     } finally {
       client.release();
     }
+  }
+
+  /**
+   * Fetch pending delete requests that have been pending for 12+ hours (UTC).
+   * Uses UTC for consistent behavior across timezones.
+   */
+  async getExpiredPendingRequests() {
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query(
+        `
+        SELECT * FROM delete_requests
+        WHERE status = 'pending'
+          AND created_at <= ((NOW() AT TIME ZONE 'UTC') - INTERVAL '12 hours')
+        ORDER BY created_at ASC
+      `
+      );
+
+      return result.rows;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Atomically expire an old request and optionally create a new pending request.
+   * Must run inside a transaction (client must be passed from caller).
+   * Returns { expired: true, newRequest?, capped? } or { expired: false } if already processed.
+   * If retry_count >= maxRetries, only expires (capped: true, newRequest: null).
+   */
+  async expireAndCreateNew(client, oldRequest, maxRetries = 10) {
+    // Step 1: Expire the old request (atomic - only succeeds if still pending)
+    const expireResult = await client.query(
+      `
+      UPDATE delete_requests
+      SET status = 'expired',
+          updated_at = (NOW() AT TIME ZONE 'UTC')
+      WHERE id = $1 AND status = 'pending'
+      RETURNING id
+      `,
+      [oldRequest.id]
+    );
+
+    if (expireResult.rows.length === 0) {
+      return { expired: false }; // Already processed (approved/rejected/expired by another process)
+    }
+
+    const retryCount = (oldRequest.retry_count ?? 0) + 1;
+    if (retryCount > maxRetries) {
+      return { expired: true, newRequest: null, capped: true, retryCount };
+    }
+
+    // Step 2: Create new delete request (UTC timestamps)
+    const insertResult = await client.query(
+      `
+      INSERT INTO delete_requests (
+        record_id,
+        record_type,
+        record_number,
+        requested_by,
+        requested_by_name,
+        requested_by_email,
+        reason,
+        status,
+        action_type,
+        dependencies_summary,
+        user_consent,
+        retry_count,
+        created_at,
+        updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, $9, $10, $11, (NOW() AT TIME ZONE 'UTC'), (NOW() AT TIME ZONE 'UTC'))
+      RETURNING *
+      `,
+      [
+        oldRequest.record_id,
+        oldRequest.record_type,
+        oldRequest.record_number || null,
+        oldRequest.requested_by || null,
+        oldRequest.requested_by_name || null,
+        oldRequest.requested_by_email || null,
+        oldRequest.reason,
+        oldRequest.action_type || 'standard',
+        oldRequest.dependencies_summary ? JSON.stringify(oldRequest.dependencies_summary) : null,
+        oldRequest.user_consent ?? false,
+        retryCount,
+      ]
+    );
+
+    return { expired: true, newRequest: insertResult.rows[0], capped: false, retryCount };
   }
 }
 

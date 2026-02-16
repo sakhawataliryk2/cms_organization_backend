@@ -861,6 +861,7 @@ if (process.env.NODE_ENV !== "production") {
 try {
   const cron = require("node-cron");
   const { runArchiveCleanup } = require("./jobs/archiveCleanup");
+  const { runDeleteRequestRetry } = require("./jobs/deleteRequestRetry");
   const TaskController = require("./controllers/taskController");
   const taskController = new TaskController(getPool());
 
@@ -897,6 +898,17 @@ try {
       }
     });
     console.log("Task reminder scheduler initialized (runs every 5 minutes)");
+
+    // Delete request retry: run every hour - expire 12h+ pending requests, create new, send email
+    cron.schedule("0 * * * *", async () => {
+      console.log("Running delete request retry job...");
+      try {
+        await runDeleteRequestRetry(getPool());
+      } catch (error) {
+        console.error("Error running delete request retry job:", error);
+      }
+    });
+    console.log("Delete request retry scheduler initialized (runs every hour)");
   }
 } catch (error) {
   console.log("node-cron not available. Scheduled cleanup jobs will not run automatically.");

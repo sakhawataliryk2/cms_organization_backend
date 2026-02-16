@@ -11,7 +11,12 @@ const { renderTemplate } = require("../utils/templateRenderer");
 const { sendMail } = require("../services/emailService");
 
 const PAYROLL_EMAIL = process.env.PAYROLL_EMAIL || "payroll@completestaffingsolutions.com";
-// const PAYROLL_EMAIL = "yasirrehman274@gmail.com";      
+// const PAYROLL_EMAIL = "yasirrehman274@gmail.com";
+
+// Optional escalation: when retry_count >= threshold, notify escalation email and add [ESCALATED] to subject
+const ESCALATION_ENABLED = process.env.DELETE_REQUEST_ESCALATION_ENABLED === "true";
+const ESCALATION_EMAIL = process.env.DELETE_REQUEST_ESCALATION_EMAIL || null;
+const ESCALATION_AFTER_RETRIES = parseInt(process.env.DELETE_REQUEST_ESCALATION_AFTER_RETRIES || "3", 10);
 
 class DeleteRequestController {
   constructor(pool) {
@@ -180,7 +185,7 @@ class DeleteRequestController {
     }
   }
 
-  async sendDeleteRequestEmail(deleteRequest, requester) {
+  async sendDeleteRequestEmail(deleteRequest, requester, options = {}) {
     const baseUrl = process.env.FRONTEND_URL || "https://cms-organization.vercel.app";
     let recordPath = "organizations";
     if (deleteRequest.record_type === "hiring_manager") {
@@ -224,6 +229,9 @@ class DeleteRequestController {
     const recordDisplay = String(deleteRequest.record_number || deleteRequest.record_id);
     const isCascade = deleteRequest.action_type === 'cascade';
     const dependencies = deleteRequest.dependencies_summary || {};
+    const retryCount = deleteRequest.retry_count ?? options.retryCount ?? 0;
+    const isEscalation = options.isEscalation ?? (ESCALATION_ENABLED && ESCALATION_EMAIL && retryCount >= ESCALATION_AFTER_RETRIES);
+    const escalationPrefix = isEscalation ? "[ESCALATED] " : "";
     
     const vars = {
       requestedBy: requester.name || "Unknown",
@@ -246,17 +254,24 @@ class DeleteRequestController {
     };
     const safeKeys = ["approvalUrl", "denyUrl"];
 
+    const recipients = isEscalation && ESCALATION_EMAIL
+      ? [PAYROLL_EMAIL, ESCALATION_EMAIL].filter(Boolean).join(", ")
+      : PAYROLL_EMAIL;
+
     if (tpl) {
-      const subject = renderTemplate(tpl.subject, vars, safeKeys);
+      const subject = escalationPrefix + renderTemplate(tpl.subject, vars, safeKeys);
       let html = renderTemplate(tpl.body, bodyVars, safeKeys);
       html = html.replace(/\r\n/g, "\n").replace(/\n/g, "<br/>");
+      if (isEscalation) {
+        html = `<div style="background:#fff3cd;border:2px solid #ffc107;padding:10px;margin-bottom:15px;border-radius:5px;"><strong>⚠️ ESCALATED</strong> - This request has been pending through ${retryCount} retry cycle(s) and requires urgent attention.</div>${html}`;
+      }
       await sendMail({
-        to: PAYROLL_EMAIL,
+        to: recipients,
         subject,
         html,
       });
     } else {
-      const subjectPrefix = isCascade ? '⚠️ Cascade Deletion Request: ' : 'Delete Request: ';
+      const subjectPrefix = escalationPrefix + (isCascade ? '⚠️ Cascade Deletion Request: ' : 'Delete Request: ');
       const cascadeSection = isCascade ? `
         <div style="background-color: #fee; border: 2px solid #f44; padding: 15px; margin: 15px 0; border-radius: 5px;">
           <h3 style="color: #c00; margin-top: 0;">⚠️ CASCADE DELETION WARNING</h3>
@@ -270,29 +285,33 @@ class DeleteRequestController {
           <p style="color: #800; font-weight: bold;">User has explicitly consented to this cascade deletion.</p>
         </div>
       ` : '';
-      
+
+      let fallbackHtml = `
+        <h2>${isCascade ? '⚠️ Cascade ' : ''}Delete Request</h2>
+        <p>A new ${deleteRequest.record_type} delete request has been submitted and requires your review.</p>
+        ${cascadeSection}
+        <p><strong>Request Details:</strong></p>
+        <ul>
+          <li><strong>Request ID:</strong> ${vars.requestId} (this ID is used in the approval link)</li>
+          <li><strong>Record (${deleteRequest.record_type}):</strong> ${recordDisplay}</li>
+          <li><strong>Request Type:</strong> ${isCascade ? 'Cascade Deletion' : 'Standard Deletion'}</li>
+          <li><strong>Requested By:</strong> ${vars.requestedBy} (${vars.requestedByEmail})</li>
+          <li><strong>Request Date:</strong> ${requestDate}</li>
+          <li><strong>Reason:</strong> ${vars.reason}</li>
+        </ul>
+        <p>Please review the request and take the appropriate action using the links below:</p>
+        <p>
+          <a href="${approvalUrl}" style="background-color: ${isCascade ? '#c00' : '#4CAF50'}; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin-right: 10px;">${isCascade ? 'Approve Cascade Deletion' : 'Approve Deletion'}</a>
+          <a href="${denyUrl}" style="background-color: #f44336; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Deny Deletion</a>
+        </p>
+      `;
+      if (isEscalation) {
+        fallbackHtml = `<div style="background:#fff3cd;border:2px solid #ffc107;padding:10px;margin-bottom:15px;border-radius:5px;"><strong>⚠️ ESCALATED</strong> - This request has been pending through ${retryCount} retry cycle(s) and requires urgent attention.</div>${fallbackHtml}`;
+      }
       await sendMail({
-        to: PAYROLL_EMAIL,
+        to: recipients,
         subject: `${subjectPrefix}${deleteRequest.record_type} ${recordDisplay}`,
-        html: `
-          <h2>${isCascade ? '⚠️ Cascade ' : ''}Delete Request</h2>
-          <p>A new ${deleteRequest.record_type} delete request has been submitted and requires your review.</p>
-          ${cascadeSection}
-          <p><strong>Request Details:</strong></p>
-          <ul>
-            <li><strong>Request ID:</strong> ${vars.requestId} (this ID is used in the approval link)</li>
-            <li><strong>Record (${deleteRequest.record_type}):</strong> ${recordDisplay}</li>
-            <li><strong>Request Type:</strong> ${isCascade ? 'Cascade Deletion' : 'Standard Deletion'}</li>
-            <li><strong>Requested By:</strong> ${vars.requestedBy} (${vars.requestedByEmail})</li>
-            <li><strong>Request Date:</strong> ${requestDate}</li>
-            <li><strong>Reason:</strong> ${vars.reason}</li>
-          </ul>
-          <p>Please review the request and take the appropriate action using the links below:</p>
-          <p>
-            <a href="${approvalUrl}" style="background-color: ${isCascade ? '#c00' : '#4CAF50'}; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin-right: 10px;">${isCascade ? 'Approve Cascade Deletion' : 'Approve Deletion'}</a>
-            <a href="${denyUrl}" style="background-color: #f44336; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Deny Deletion</a>
-          </p>
-        `,
+        html: fallbackHtml,
       });
     }
   }
@@ -330,10 +349,11 @@ class DeleteRequestController {
         });
       }
 
-      return res.json({
-        success: true,
-        deleteRequest,
-      });
+      const payload = { success: true, deleteRequest };
+      if (deleteRequest.status === "expired") {
+        payload.message = "This delete request session has expired.";
+      }
+      return res.json(payload);
     } catch (error) {
       console.error("Error fetching delete request:", error);
       return res.status(500).json({
@@ -373,9 +393,13 @@ class DeleteRequestController {
 
       if (deleteRequest.status !== "pending") {
         const recordDisplay = deleteRequest.record_number || deleteRequest.record_id;
+        const message =
+          deleteRequest.status === "expired"
+            ? "This delete request session has expired."
+            : `Delete request for ${deleteRequest.record_type} ${recordDisplay} has already been ${deleteRequest.status}. The record may already be archived.`;
         return res.status(400).json({
           success: false,
-          message: `Delete request for ${deleteRequest.record_type} ${recordDisplay} has already been ${deleteRequest.status}. The record may already be archived.`,
+          message,
         });
       }
 
@@ -438,9 +462,13 @@ class DeleteRequestController {
       }
 
       if (deleteRequest.status !== "pending") {
+        const message =
+          deleteRequest.status === "expired"
+            ? "This delete request session has expired."
+            : `Delete request is already ${deleteRequest.status}`;
         return res.status(400).json({
           success: false,
-          message: `Delete request is already ${deleteRequest.status}`,
+          message,
         });
       }
 
