@@ -7,6 +7,7 @@ const Placement = require('../models/placement');
 const OrganizationDefaultDocument = require('../models/organizationDefaultDocument');
 const TemplateDocument = require('../models/templateDocument');
 const { put } = require('@vercel/blob');
+const { normalizeCustomFields, normalizeListCustomFields } = require('../utils/exportHelpers');
 
 class OrganizationController {
     constructor(pool) {
@@ -278,21 +279,16 @@ class OrganizationController {
         }
     }
 
-    // Get all organizations
+    // Get all organizations (full records for export when ?full=1; always return all columns including custom_fields)
     async getAll(req, res) {
         try {
-            // Get the current user's ID from the auth middleware
-            const userId = req.user.id;
-            const userRole = req.user.role;
-
-            // All users can see all organizations
             const organizations = await this.organizationModel.getAll(null);
-
+            const normalized = normalizeListCustomFields(organizations);
 
             res.status(200).json({
                 success: true,
-                count: organizations.length,
-                organizations
+                count: normalized.length,
+                organizations: normalized
             });
         } catch (error) {
             console.error('Error getting organizations:', error);
@@ -335,13 +331,14 @@ class OrganizationController {
                     console.error('Error resolving parent organization:', e);
                 }
             } else if (parentOrgRaw && (typeof parentOrgRaw === 'string' && parentOrgRaw.trim() !== '')) {
-                // Store as name when it's not a numeric ID
                 organization.parent_organization_name = parentOrgRaw;
             }
 
+            const normalizedOrg = normalizeCustomFields(organization);
+
             res.status(200).json({
                 success: true,
-                organization
+                organization: normalizedOrg
             });
         } catch (error) {
             console.error('Error getting organization:', error);

@@ -2,6 +2,7 @@ const Task = require('../models/task');
 const { sendMail } = require('../services/emailService');
 const EmailTemplateModel = require('../models/emailTemplateModel');
 const { renderTemplate } = require('../utils/templateRenderer');
+const { normalizeCustomFields, normalizeListCustomFields } = require('../utils/exportHelpers');
 
 class TaskController {
     constructor(pool) {
@@ -113,13 +114,14 @@ class TaskController {
 
             // All users can see all tasks
             const tasks = await this.taskModel.getAll(null);
+            const normalized = normalizeListCustomFields(tasks);
 
-            console.log(`Found ${tasks.length} tasks`);
+            console.log(`Found ${normalized.length} tasks`);
 
             res.status(200).json({
                 success: true,
-                count: tasks.length,
-                tasks
+                count: normalized.length,
+                tasks: normalized
             });
         } catch (error) {
             console.error('Error getting tasks:', error);
@@ -163,9 +165,11 @@ class TaskController {
 
             console.log(`Successfully retrieved task: ${task.id}`);
 
+            const normalizedTask = normalizeCustomFields(task);
+
             res.status(200).json({
                 success: true,
-                task
+                task: normalizedTask
             });
         } catch (error) {
             console.error('Error getting task:', error);

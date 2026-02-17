@@ -1,6 +1,7 @@
 const HiringManager = require('../models/hiringManager');
 const Document = require('../models/document');
 const { put } = require('@vercel/blob');
+const { normalizeCustomFields, normalizeListCustomFields } = require('../utils/exportHelpers');
 
 class HiringManagerController {
     constructor(pool) {
@@ -132,13 +133,14 @@ class HiringManagerController {
             console.log(`User ID: ${userId}, User Role: ${userRole}`);
 
             const hiringManagers = await this.hiringManagerModel.getAll(null);
+            const normalized = normalizeListCustomFields(hiringManagers);
 
-            console.log(`Found ${hiringManagers.length} hiring managers`);
+            console.log(`Found ${normalized.length} hiring managers`);
 
             res.status(200).json({
                 success: true,
-                count: hiringManagers.length,
-                hiringManagers
+                count: normalized.length,
+                hiringManagers: normalized
             });
         } catch (error) {
             console.error('Error getting hiring managers:', error);
@@ -181,9 +183,10 @@ class HiringManagerController {
 
             console.log(`Successfully retrieved hiring manager: ${hiringManager.id}`);
 
+            const normalizedHiringManager = normalizeCustomFields(hiringManager);
             res.status(200).json({
                 success: true,
-                hiringManager
+                hiringManager: normalizedHiringManager
             });
         } catch (error) {
             console.error('Error getting hiring manager:', error);

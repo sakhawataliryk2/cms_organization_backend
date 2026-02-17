@@ -1,6 +1,7 @@
 const Lead = require('../models/lead');
 const Document = require('../models/document');
 const { put } = require('@vercel/blob');
+const { normalizeCustomFields, normalizeListCustomFields } = require('../utils/exportHelpers');
 
 class LeadController {
     constructor(pool) {
@@ -157,13 +158,14 @@ class LeadController {
             console.log(`User ID: ${userId}, User Role: ${userRole}`);
 
             const leads = await this.leadModel.getAll(null);
+            const normalized = normalizeListCustomFields(leads);
 
-            console.log(`Found ${leads.length} leads`);
+            console.log(`Found ${normalized.length} leads`);
 
             res.status(200).json({
                 success: true,
-                count: leads.length,
-                leads
+                count: normalized.length,
+                leads: normalized
             });
         } catch (error) {
             console.error('Error getting leads:', error);
@@ -206,9 +208,10 @@ class LeadController {
 
             console.log(`Successfully retrieved lead: ${lead.id}`);
 
+            const normalizedLead = normalizeCustomFields(lead);
             res.status(200).json({
                 success: true,
-                lead
+                lead: normalizedLead
             });
         } catch (error) {
             console.error('Error getting lead:', error);

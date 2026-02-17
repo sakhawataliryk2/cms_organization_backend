@@ -2,6 +2,7 @@
 const Placement = require('../models/placement');
 const Document = require('../models/document');
 const { put } = require('@vercel/blob');
+const { normalizeCustomFields, normalizeListCustomFields } = require('../utils/exportHelpers');
 
 class PlacementController {
     constructor(pool) {
@@ -124,11 +125,12 @@ class PlacementController {
 
             // All users can see all placements
             const placements = await this.placementModel.getAll(null);
+            const normalized = normalizeListCustomFields(placements);
 
             res.status(200).json({
                 success: true,
-                count: placements.length,
-                placements
+                count: normalized.length,
+                placements: normalized
             });
         } catch (error) {
             console.error('Error getting placements:', error);
@@ -155,9 +157,10 @@ class PlacementController {
             }
             console.log("Placement:", placement);
             console.log("Placement archived at:", placement.archivedAt);
+            const normalizedPlacement = normalizeCustomFields(placement);
             res.status(200).json({
                 success: true,
-                placement
+                placement: normalizedPlacement
             });
         } catch (error) {
             console.error('Error getting placement:', error);

@@ -2,6 +2,7 @@
 const Job = require('../models/job');
 const Document = require('../models/document');
 const { put } = require('@vercel/blob');
+const { normalizeCustomFields, normalizeListCustomFields } = require('../utils/exportHelpers');
 
 class JobController {
     constructor(pool) {
@@ -143,11 +144,12 @@ class JobController {
             const userRole = req.user.role;
 
             const jobs = await this.jobModel.getAll(null);
+            const normalized = normalizeListCustomFields(jobs);
 
             res.status(200).json({
                 success: true,
-                count: jobs.length,
-                jobs
+                count: normalized.length,
+                jobs: normalized
             });
         } catch (error) {
             console.error('Error getting jobs:', error);
@@ -173,9 +175,10 @@ class JobController {
                 });
             }
 
+            const normalizedJob = normalizeCustomFields(job);
             res.status(200).json({
                 success: true,
-                job
+                job: normalizedJob
             });
         } catch (error) {
             console.error('Error getting job:', error);

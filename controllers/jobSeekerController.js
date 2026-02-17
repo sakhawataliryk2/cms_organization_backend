@@ -1,6 +1,7 @@
 const JobSeeker = require("../models/jobseeker");
 const Document = require("../models/document");
 const { put } = require("@vercel/blob");
+const { normalizeCustomFields, normalizeListCustomFields } = require("../utils/exportHelpers");
 
 const jwt = require("jsonwebtoken");
 
@@ -399,17 +400,12 @@ class JobSeekerController {
       const archivedParam = req.query?.archived;
       const archivedFilter = archivedParam === 'true' ? true : archivedParam === 'false' ? false : null;
       const jobSeekers = await this.jobSeekerModel.getAll(null, archivedFilter);
-
-
+      const normalized = normalizeListCustomFields(jobSeekers);
 
       res.status(200).json({
-
         success: true,
-
-        count: jobSeekers.length,
-
-        jobSeekers,
-
+        count: normalized.length,
+        jobSeekers: normalized,
       });
 
     } catch (error) {
@@ -468,12 +464,10 @@ class JobSeekerController {
 
 
 
+      const normalizedJobSeeker = normalizeCustomFields(jobSeeker);
       res.status(200).json({
-
         success: true,
-
-        jobSeeker,
-
+        jobSeeker: normalizedJobSeeker,
       });
 
     } catch (error) {
