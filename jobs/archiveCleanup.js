@@ -82,7 +82,7 @@ async function runArchiveCleanup(pool) {
     // ---------- Hiring Managers ----------
     const archivedHmResult = await client.query(
       `
-      SELECT hm.id, hm.first_name, hm.last_name
+      SELECT hm.id, hm.first_name, hm.last_name, hm.record_number
       FROM hiring_managers hm
       WHERE hm.status = 'Archived'
         AND hm.archived_at IS NOT NULL
@@ -95,6 +95,10 @@ async function runArchiveCleanup(pool) {
     for (const hm of archivedHms) {
       const hmName = `${hm.last_name || ""}, ${hm.first_name || ""}`.trim() || `ID ${hm.id}`;
       console.log(`Cleaning up archived hiring manager: ${hmName} (ID: ${hm.id})`);
+
+      if (hm.record_number != null) {
+        await releaseRecordNumber(client, "hiring_manager", hm.record_number);
+      }
 
       await client.query(
         "DELETE FROM hiring_manager_notes WHERE hiring_manager_id = $1",
@@ -170,7 +174,7 @@ async function runArchiveCleanup(pool) {
     // ---------- Leads ----------
     const archivedLeadsResult = await client.query(
       `
-      SELECT l.id, l.first_name, l.last_name
+      SELECT l.id, l.first_name, l.last_name, l.record_number
       FROM leads l
       WHERE l.status = 'Archived'
         AND l.archived_at IS NOT NULL
@@ -183,6 +187,10 @@ async function runArchiveCleanup(pool) {
     for (const lead of archivedLeads) {
       const leadName = `${lead.last_name || ""}, ${lead.first_name || ""}`.trim() || `ID ${lead.id}`;
       console.log(`Cleaning up archived lead: ${leadName} (ID: ${lead.id})`);
+
+      if (lead.record_number != null) {
+        await releaseRecordNumber(client, "lead", lead.record_number);
+      }
 
       await client.query(
         "DELETE FROM lead_notes WHERE lead_id = $1",
@@ -256,7 +264,7 @@ async function runArchiveCleanup(pool) {
     // ---------- Placements ----------
     const archivedPlacementsResult = await client.query(
       `
-      SELECT p.id, p.job_id, p.job_seeker_id
+      SELECT p.id, p.job_id, p.job_seeker_id, p.record_number
       FROM placements p
       WHERE p.status = 'Archived'
         AND p.archived_at IS NOT NULL
@@ -268,6 +276,10 @@ async function runArchiveCleanup(pool) {
 
     for (const placement of archivedPlacements) {
       console.log(`Cleaning up archived placement: ID ${placement.id}`);
+
+      if (placement.record_number != null) {
+        await releaseRecordNumber(client, "placement", placement.record_number);
+      }
 
       await client.query(
         "DELETE FROM placement_notes WHERE placement_id = $1",

@@ -20,13 +20,19 @@ CREATE TABLE IF NOT EXISTS modules (
 INSERT INTO modules (name, prefix) VALUES
     ('task', 'T'),
     ('job', 'J'),
-    ('organization', 'O')
+    ('organization', 'O'),
+    ('hiring_manager', 'HM'),
+    ('lead', 'L'),
+    ('placement', 'P')
 ON CONFLICT (name) DO NOTHING;
 
 -- 3) Sequences for new numbers when pool is empty (one per module)
 CREATE SEQUENCE IF NOT EXISTS task_record_number_seq START 1;
 CREATE SEQUENCE IF NOT EXISTS job_record_number_seq START 1;
 CREATE SEQUENCE IF NOT EXISTS organization_record_number_seq START 1;
+CREATE SEQUENCE IF NOT EXISTS hiring_manager_record_number_seq START 1;
+CREATE SEQUENCE IF NOT EXISTS lead_record_number_seq START 1;
+CREATE SEQUENCE IF NOT EXISTS placement_record_number_seq START 1;
 
 -- 4) Allocation function: reuse smallest from pool or nextval(sequence)
 --    Caller must run this inside a transaction; FOR UPDATE ensures concurrency safety.
@@ -124,6 +130,69 @@ BEGIN
         ALTER TABLE organizations ALTER COLUMN record_number SET NOT NULL;
         CREATE UNIQUE INDEX IF NOT EXISTS idx_organizations_record_number ON organizations (record_number);
         PERFORM setval('organization_record_number_seq', (SELECT COALESCE(MAX(record_number), 0) + 1 FROM organizations));
+    END IF;
+END $$;
+
+-- ----- hiring_managers (only if table exists) -----
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'hiring_managers')
+       AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'hiring_managers' AND column_name = 'record_number')
+    THEN
+        ALTER TABLE hiring_managers ADD COLUMN record_number INTEGER;
+        WITH ordered AS (
+            SELECT id, ROW_NUMBER() OVER (ORDER BY id) AS rn
+            FROM hiring_managers
+        )
+        UPDATE hiring_managers hm
+        SET record_number = ordered.rn
+        FROM ordered
+        WHERE hm.id = ordered.id;
+        ALTER TABLE hiring_managers ALTER COLUMN record_number SET NOT NULL;
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_hiring_managers_record_number ON hiring_managers (record_number);
+        PERFORM setval('hiring_manager_record_number_seq', (SELECT COALESCE(MAX(record_number), 0) + 1 FROM hiring_managers));
+    END IF;
+END $$;
+
+-- ----- leads (only if table exists) -----
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'leads')
+       AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'leads' AND column_name = 'record_number')
+    THEN
+        ALTER TABLE leads ADD COLUMN record_number INTEGER;
+        WITH ordered AS (
+            SELECT id, ROW_NUMBER() OVER (ORDER BY id) AS rn
+            FROM leads
+        )
+        UPDATE leads l
+        SET record_number = ordered.rn
+        FROM ordered
+        WHERE l.id = ordered.id;
+        ALTER TABLE leads ALTER COLUMN record_number SET NOT NULL;
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_leads_record_number ON leads (record_number);
+        PERFORM setval('lead_record_number_seq', (SELECT COALESCE(MAX(record_number), 0) + 1 FROM leads));
+    END IF;
+END $$;
+
+-- ----- placements (only if table exists) -----
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'placements')
+       AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'placements' AND column_name = 'record_number')
+    THEN
+        ALTER TABLE placements ADD COLUMN record_number INTEGER;
+        WITH ordered AS (
+            SELECT id, ROW_NUMBER() OVER (ORDER BY id) AS rn
+            FROM placements
+        )
+        UPDATE placements p
+        SET record_number = ordered.rn
+        FROM ordered
+        WHERE p.id = ordered.id;
+        ALTER TABLE placements ALTER COLUMN record_number SET NOT NULL;
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_placements_record_number ON placements (record_number);
+        PERFORM setval('placement_record_number_seq', (SELECT COALESCE(MAX(record_number), 0) + 1 FROM placements));
     END IF;
 END $$;
 

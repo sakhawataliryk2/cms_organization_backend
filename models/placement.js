@@ -1,4 +1,6 @@
 // models/placement.js
+const { allocateRecordNumber, releaseRecordNumber } = require('../services/recordNumberService');
+
 class Placement {
     constructor(pool) {
         this.pool = pool;
@@ -39,7 +41,8 @@ class Placement {
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     custom_fields JSONB,
                     archived_at TIMESTAMP,
-                    archive_reason VARCHAR(50)
+                    archive_reason VARCHAR(50),
+                    record_number INTEGER
                 )
             `);
 
@@ -62,7 +65,7 @@ class Placement {
             // Add organization_id column (filled from job; sent from frontend)
             await client.query(`
                 ALTER TABLE placements 
-                ADD COLUMN IF NOT EXISTS organization_id INTEGER REFERENCES organizations(id)
+                ADD COLUMN IF NOT EXISTS organization_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE
             `);
 
             // Add archived_at and archive_reason columns if they don't exist (for existing tables)
@@ -85,6 +88,16 @@ class Placement {
             `);
             await client.query(`
                 CREATE INDEX IF NOT EXISTS idx_placements_organization_id ON placements(organization_id)
+            `);
+
+            // Ensure organization_id uses ON DELETE CASCADE for existing installations
+            await client.query(`
+                ALTER TABLE placements
+                DROP CONSTRAINT IF EXISTS placements_organization_id_fkey,
+                ADD CONSTRAINT placements_organization_id_fkey
+                    FOREIGN KEY (organization_id)
+                    REFERENCES organizations(id)
+                    ON DELETE CASCADE
             `);
 
             // Create placement history table (same structure as job_history, etc.)
@@ -188,6 +201,9 @@ class Placement {
         try {
             await client.query('BEGIN');
 
+            // Allocate business record number (display-only)
+            const recordNumber = await allocateRecordNumber(client, 'placement');
+
             // Handle custom_fields - accept both customFields and custom_fields, convert object to JSON string for JSONB
             let customFieldsJson = null;
             
@@ -222,9 +238,9 @@ class Placement {
                     salary, placement_fee_percent, placement_fee_flat, days_guaranteed,
                     hours_per_day, hours_of_operation,
                     pay_rate, pay_rate_checked, effective_date, effective_date_checked,
-                    overtime_exemption, created_by, custom_fields, created_at, updated_at
+                    overtime_exemption, created_by, custom_fields, record_number, created_at, updated_at
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, NOW(), NOW())
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, NOW(), NOW())
                 RETURNING *
             `;
 
@@ -248,7 +264,8 @@ class Placement {
                 effective_date_checked || false,
                 overtime_exemption || false,
                 created_by || null,
-                customFieldsJson
+                customFieldsJson,
+                recordNumber
             ];
 
             const result = await client.query(insertQuery, values);
@@ -730,6 +747,11 @@ class Placement {
                     JSON.stringify(placement),
                     userId || placement.created_by
                 ]);
+
+                // Release record_number back to pool for reuse
+                if (placement.record_number != null) {
+                    await releaseRecordNumber(client, 'placement', placement.record_number);
+                }
             }
 
             const deleteQuery = 'DELETE FROM placements WHERE id = $1 RETURNING *';

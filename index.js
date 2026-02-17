@@ -48,6 +48,7 @@ const AppointmentController = require("./controllers/appointmentController");
 const OfficeController = require("./controllers/officeController");
 const TeamController = require("./controllers/teamController");
 const TemplateDocumentController = require("./controllers/templateDocumentController");
+const ActivityController = require("./controllers/activityController");
 //OnBoarding
 const OnboardingController = require("./controllers/onboardingController");
 const createOnboardingRouter = require("./routes/onboardingRoutes");
@@ -80,6 +81,7 @@ const createTeamRouter = require("./routes/teamRoutes");
 const createTemplateDocumentsRouter = require("./routes/templateDocumentsRoutes");
 const createOrganizationDefaultDocumentRouter = require("./routes/organizationDefaultDocumentRoutes");
 const createScrapeRouter = require("./routes/scrapeRoutes");
+const createActivityRouter = require("./routes/activityRoutes");
 
 const packetRoutes = require("./routes/packetRoutes");
 
@@ -278,6 +280,10 @@ const getEmailTemplateController = () => {
 
 const getAppointmentController = () => {
   return new AppointmentController(getPool());
+};
+
+const getActivityController = () => {
+  return new ActivityController(getPool());
 };
 
 
@@ -483,6 +489,11 @@ app.use(async (req, res, next) => {
           // Don't throw - let the route handle the error, but log it clearly
         }
       }
+      // Initialize activity log tables
+      if (req.path.startsWith("/api/activity")) {
+        const activityController = getActivityController();
+        await activityController.initTables();
+      }
     } catch (error) {
       console.error("Failed to initialize tables:", error.message);
       // Continue anyway - tables might already exist
@@ -500,6 +511,13 @@ app.use("/api/auth", sanitizeInputs, (req, res, next) => {
 // Setup job XML routes
 app.use("/api/jobs/xml", sanitizeInputs, (req, res, next) => {
   const router = createJobXMLRouter(getJobXMLController());
+  router(req, res, next);
+});
+
+// Activity logging + admin activity endpoints
+app.use("/api/activity", sanitizeInputs, (req, res, next) => {
+  const authMiddleware = { verifyToken: verifyToken(getPool()), checkRole };
+  const router = createActivityRouter(getActivityController(), authMiddleware);
   router(req, res, next);
 });
 

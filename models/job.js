@@ -20,7 +20,7 @@ class Job {
                 job_title VARCHAR(255),
                 job_type VARCHAR(50),
                 category VARCHAR(100),
-                organization_id INTEGER REFERENCES organizations(id),
+                organization_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE,
                 hiring_manager VARCHAR(255),
                 status VARCHAR(50) DEFAULT 'Open',
                 priority VARCHAR(10),
@@ -44,6 +44,16 @@ class Job {
                 archived_at TIMESTAMP,
                 archive_reason VARCHAR(50)
                 )
+            `);
+
+            // Ensure organization_id uses ON DELETE CASCADE for existing installations
+            await client.query(`
+                ALTER TABLE jobs
+                DROP CONSTRAINT IF EXISTS jobs_organization_id_fkey,
+                ADD CONSTRAINT jobs_organization_id_fkey
+                    FOREIGN KEY (organization_id)
+                    REFERENCES organizations(id)
+                    ON DELETE CASCADE
             `);
 
             // Also create a table for job notes if it doesn't exist

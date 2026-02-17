@@ -1,4 +1,5 @@
 const bcrypt = require('bcrypt');
+const { allocateRecordNumber, releaseRecordNumber } = require('../services/recordNumberService');
 
 // Keys to exclude from history (internal relationship IDs - redundant with user-facing Job/Contact/Candidate fields)
 const HISTORY_EXCLUDED_CUSTOM_FIELD_PREFIXES = ['_relationship_'];
@@ -50,7 +51,7 @@ class Lead {
                     status VARCHAR(50) DEFAULT 'New Lead',
                     nickname VARCHAR(255),
                     title VARCHAR(255),
-                    organization_id INTEGER REFERENCES organizations(id),
+                    organization_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE,
                     organization_name VARCHAR(255),
                     department VARCHAR(100),
                     reports_to VARCHAR(255),
@@ -75,8 +76,19 @@ class Lead {
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     custom_fields JSONB,
                     archived_at TIMESTAMP,
-                    archive_reason VARCHAR(50)
+                    archive_reason VARCHAR(50),
+                    record_number INTEGER
                 )
+            `);
+
+            // Ensure organization_id uses ON DELETE CASCADE for existing installations
+            await client.query(`
+                ALTER TABLE leads
+                DROP CONSTRAINT IF EXISTS leads_organization_id_fkey,
+                ADD CONSTRAINT leads_organization_id_fkey
+                    FOREIGN KEY (organization_id)
+                    REFERENCES organizations(id)
+                    ON DELETE CASCADE
             `);
 
             // Add new address-related columns if they don't exist (for existing tables)
@@ -240,6 +252,9 @@ class Lead {
             // Begin transaction
             await client.query('BEGIN');
 
+            // Allocate business record number (display-only)
+            const recordNumber = await allocateRecordNumber(client, 'lead');
+
             // Handle organization ID resolution
             let orgId = null;
             let orgName = organizationName;
@@ -341,9 +356,10 @@ class Lead {
                     zip_code,
                     date_added,
                     created_by,
-                    custom_fields
+                    custom_fields,
+                    record_number
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
                 RETURNING *
             `;
 
@@ -373,7 +389,8 @@ class Lead {
                 zipCode,
                 dateAdded || new Date().toISOString().split('T')[0],
                 userId,
-                customFieldsJson
+                customFieldsJson,
+                recordNumber
             ];
 
             console.log("SQL Query:", insertLeadQuery);
@@ -769,6 +786,11 @@ class Lead {
             ];
 
             await client.query(historyQuery, historyValues);
+
+            // Release record_number back to pool for reuse
+            if (lead.record_number != null) {
+                await releaseRecordNumber(client, 'lead', lead.record_number);
+            }
 
             // Delete the lead
             const deleteQuery = 'DELETE FROM leads WHERE id = $1 RETURNING *';

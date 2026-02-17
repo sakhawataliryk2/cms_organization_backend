@@ -937,6 +937,24 @@ class Organization {
                 [orgId]
             );
 
+            // Get Tasks directly linked via organization_id
+            const taskQuery = await client.query(
+                `SELECT id, title, status, due_date, created_at
+                 FROM tasks
+                 WHERE organization_id = $1 AND status != 'Archived'
+                 ORDER BY created_at DESC`,
+                [orgId]
+            );
+
+            // Get Leads directly linked via organization_id
+            const leadQuery = await client.query(
+                `SELECT id, first_name, last_name, email, status, created_at
+                 FROM leads
+                 WHERE organization_id = $1 AND (status IS NULL OR status != 'Archived')
+                 ORDER BY created_at DESC`,
+                [orgId]
+            );
+
             // Get Placements (linked via jobs, includes both directly created and transferred)
             const placementQuery = await client.query(
                 `SELECT p.id, p.job_seeker_id, p.job_id, 
@@ -1001,16 +1019,38 @@ class Organization {
                 type: 'organization'
             }));
 
+            // Format tasks
+            const tasks = taskQuery.rows.map(task => ({
+                id: task.id,
+                name: task.title || 'Untitled',
+                status: task.status || null,
+                due_date: task.due_date || null,
+                type: 'task'
+            }));
+
+            // Format leads
+            const leads = leadQuery.rows.map(lead => ({
+                id: lead.id,
+                name: `${lead.first_name || ''} ${lead.last_name || ''}`.trim() || 'Unnamed',
+                email: lead.email || null,
+                status: lead.status || null,
+                type: 'lead'
+            }));
+
             return {
                 hiring_managers: hiringManagers.length,
                 jobs: jobs.length,
                 placements: placements.length,
                 child_organizations: childOrganizations.length,
+                tasks: tasks.length,
+                leads: leads.length,
                 details: {
                     hiring_managers: hiringManagers,
                     jobs: jobs,
                     placements: placements,
-                    child_organizations: childOrganizations
+                    child_organizations: childOrganizations,
+                    tasks,
+                    leads
                 }
             };
         } catch (error) {

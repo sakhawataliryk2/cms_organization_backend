@@ -8,7 +8,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const ALLOWED_MODULES = ['task', 'job', 'organization'];
+const ALLOWED_MODULES = ['task', 'job', 'organization', 'hiring_manager', 'lead', 'placement'];
 
 function validateModule(moduleType) {
     if (!ALLOWED_MODULES.includes(moduleType)) {
@@ -56,7 +56,14 @@ async function releaseRecordNumber(client, moduleType, number) {
  * Get display string for a record: prefix + '-' + record_number (e.g. T-15, J-4).
  * Can be used when building API responses. Prefixes are in modules table; fallback map below.
  */
-const PREFIX_MAP = { task: 'T', job: 'J', organization: 'O' };
+const PREFIX_MAP = {
+    task: 'T',
+    job: 'J',
+    organization: 'O',
+    hiring_manager: 'HM',
+    lead: 'L',
+    placement: 'P',
+};
 
 function formatDisplayRecordNumber(moduleType, recordNumber) {
     if (recordNumber == null) return '';

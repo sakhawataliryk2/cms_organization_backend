@@ -21,7 +21,7 @@ class Task {
                     is_completed BOOLEAN DEFAULT false,
                     due_date DATE,
                     due_time TIME,
-                    organization_id INTEGER REFERENCES organizations(id),
+                    organization_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE,
                     job_seeker_id INTEGER REFERENCES job_seekers(id),
                     hiring_manager_id INTEGER REFERENCES hiring_managers(id),
                     job_id INTEGER REFERENCES jobs(id),
@@ -50,10 +50,20 @@ class Task {
                         SELECT 1 FROM information_schema.columns 
                         WHERE table_name='tasks' AND column_name='organization_id'
                     ) THEN
-                        ALTER TABLE tasks ADD COLUMN organization_id INTEGER REFERENCES organizations(id);
+                        ALTER TABLE tasks ADD COLUMN organization_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE;
                         CREATE INDEX IF NOT EXISTS idx_tasks_organization_id ON tasks(organization_id);
                     END IF;
                 END $$;
+            `);
+
+            // Ensure organization_id uses ON DELETE CASCADE for existing installations
+            await client.query(`
+                ALTER TABLE tasks
+                DROP CONSTRAINT IF EXISTS tasks_organization_id_fkey,
+                ADD CONSTRAINT tasks_organization_id_fkey
+                    FOREIGN KEY (organization_id)
+                    REFERENCES organizations(id)
+                    ON DELETE CASCADE
             `);
 
             // Reminder: minutes before due to send email to owner and assigned_to
