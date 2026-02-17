@@ -54,6 +54,7 @@ const createOnboardingRouter = require("./routes/onboardingRoutes");
 
 const createAuthRouter = require("./routes/authRoutes");
 const { createOrganizationRouter, createTransferRouter, createDeleteRequestRouter } = require("./routes/organizationRoutes");
+const { createUnarchiveRequestRouter } = require("./routes/unarchiveRequestRoutes");
 const { createJobRouter, createJobDeleteRequestRouter } = require("./routes/jobRoutes");
 const createJobXMLRouter = require("./routes/jobXMLRoutes");
 const jobSeekerRoutes = require("./routes/jobSeekerRoutes");
@@ -408,8 +409,9 @@ app.use(async (req, res, next) => {
       }
 
       // Initialize delete request tables
-      if (req.path.includes("/delete-request") || 
-          req.path.match(/\/delete\/\d+/) || 
+      if (req.path.includes("/delete-request") ||
+          req.path.includes("/unarchive-request") ||
+          req.path.match(/\/delete\/\d+/) ||
           req.path.match(/\/delete\/\d+\/(approve|deny)/)) {
         const deleteRequestController = getDeleteRequestController();
         await deleteRequestController.initTables();
@@ -510,8 +512,9 @@ app.use("/api/users", sanitizeInputs, (req, res, next) => {
 // Setup delete request routes FIRST (before main routes to avoid conflicts)
 const applyDeleteRequestRoutes = (basePath) => {
   app.use(basePath, sanitizeInputs, (req, res, next) => {
-    if (req.path.includes("/delete-request") || 
-        req.path.match(/\/delete\/\d+/) || 
+    if (req.path.includes("/delete-request") ||
+        req.path.includes("/unarchive-request") ||
+        req.path.match(/\/delete\/\d+/) ||
         req.path.match(/\/delete\/\d+\/(approve|deny)/)) {
       const authMiddleware = { verifyToken: verifyToken(getPool()), checkRole };
       const router = createDeleteRequestRouter(
@@ -527,6 +530,16 @@ const applyDeleteRequestRoutes = (basePath) => {
 
 applyDeleteRequestRoutes("/api/organizations");
 applyDeleteRequestRoutes("/api/hiring-managers");
+
+// Unarchive request approve/deny (generic; id = unarchive_request id)
+app.use("/api/unarchive-requests", sanitizeInputs, (req, res, next) => {
+  const authMiddleware = { verifyToken: verifyToken(getPool()), checkRole };
+  const router = createUnarchiveRequestRouter(
+    getDeleteRequestController(),
+    authMiddleware
+  );
+  router(req, res, next);
+});
 // Job-seekers use dedicated delete router below (same pattern as jobs, leads, tasks, placements)
 
 // Setup organization routes with authentication
@@ -561,8 +574,9 @@ app.use("/api/hiring-managers/transfer", sanitizeInputs, (req, res, next) => {
 
 // Setup delete request routes for jobs FIRST (before main routes to avoid conflicts)
 app.use("/api/jobs", sanitizeInputs, (req, res, next) => {
-  if (req.path.includes("/delete-request") || 
-      req.path.match(/\/delete\/\d+/) || 
+  if (req.path.includes("/delete-request") ||
+      req.path.includes("/unarchive-request") ||
+      req.path.match(/\/delete\/\d+/) ||
       req.path.match(/\/delete\/\d+\/(approve|deny)/)) {
     const authMiddleware = { verifyToken: verifyToken(getPool()), checkRole };
     const router = createJobDeleteRequestRouter(
@@ -595,6 +609,7 @@ app.use("/api/job-seekers/transfer", sanitizeInputs, (req, res, next) => {
 // Setup delete request routes for job seekers FIRST (same pattern as tasks/jobs)
 app.use("/api/job-seekers", sanitizeInputs, (req, res, next) => {
   if (req.path.includes("/delete-request") ||
+      req.path.includes("/unarchive-request") ||
       req.path.match(/\/delete\/\d+/) ||
       req.path.match(/\/delete\/\d+\/(approve|deny)/)) {
     const authMiddleware = { verifyToken: verifyToken(getPool()), checkRole };
@@ -640,8 +655,9 @@ app.use("/api/custom-fields", sanitizeInputs, (req, res, next) => {
 
 // Setup delete request routes for leads FIRST (before main routes to avoid conflicts)
 app.use("/api/leads", sanitizeInputs, (req, res, next) => {
-  if (req.path.includes("/delete-request") || 
-      req.path.match(/\/delete\/\d+/) || 
+  if (req.path.includes("/delete-request") ||
+      req.path.includes("/unarchive-request") ||
+      req.path.match(/\/delete\/\d+/) ||
       req.path.match(/\/delete\/\d+\/(approve|deny)/)) {
     const authMiddleware = { verifyToken: verifyToken(getPool()), checkRole };
     const router = createLeadDeleteRequestRouter(
@@ -662,8 +678,9 @@ app.use("/api/leads", sanitizeInputs, (req, res, next) => {
 
 // Setup delete request routes for tasks FIRST (before main routes to avoid conflicts)
 app.use("/api/tasks", sanitizeInputs, (req, res, next) => {
-  if (req.path.includes("/delete-request") || 
-      req.path.match(/\/delete\/\d+/) || 
+  if (req.path.includes("/delete-request") ||
+      req.path.includes("/unarchive-request") ||
+      req.path.match(/\/delete\/\d+/) ||
       req.path.match(/\/delete\/\d+\/(approve|deny)/)) {
     const authMiddleware = { verifyToken: verifyToken(getPool()), checkRole };
     const router = createTaskDeleteRequestRouter(
@@ -684,8 +701,9 @@ app.use("/api/tasks", sanitizeInputs, (req, res, next) => {
 
 // Setup delete request routes for placements FIRST (before main routes to avoid conflicts)
 app.use("/api/placements", sanitizeInputs, (req, res, next) => {
-  if (req.path.includes("/delete-request") || 
-      req.path.match(/\/delete\/\d+/) || 
+  if (req.path.includes("/delete-request") ||
+      req.path.includes("/unarchive-request") ||
+      req.path.match(/\/delete\/\d+/) ||
       req.path.match(/\/delete\/\d+\/(approve|deny)/)) {
     const authMiddleware = { verifyToken: verifyToken(getPool()), checkRole };
     const router = createPlacementDeleteRequestRouter(

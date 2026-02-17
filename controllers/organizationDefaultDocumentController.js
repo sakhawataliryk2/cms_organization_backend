@@ -1,6 +1,7 @@
 const OrganizationDefaultDocument = require("../models/organizationDefaultDocument");
 const Document = require("../models/document");
 const TemplateDocument = require("../models/templateDocument");
+const { put } = require("@vercel/blob");
 
 class OrganizationDefaultDocumentController {
   constructor(pool) {
@@ -12,6 +13,7 @@ class OrganizationDefaultDocumentController {
     this.getAll = this.getAll.bind(this);
     this.getBySlot = this.getBySlot.bind(this);
     this.setWelcome = this.setWelcome.bind(this);
+    this.setWelcomeUpload = this.setWelcomeUpload.bind(this);
     this.pushToAllOrganizations = this.pushToAllOrganizations.bind(this);
   }
 
@@ -51,7 +53,7 @@ class OrganizationDefaultDocumentController {
     }
   }
 
-  // Set the Welcome document template (template_document_id)
+  // Set the Welcome document template (template_document_id) - used when linking to onboarding template
   async setWelcome(req, res) {
     try {
       const { template_document_id } = req.body || {};
@@ -85,36 +87,102 @@ class OrganizationDefaultDocumentController {
     }
   }
 
-  // Push the current Welcome template to all organizations
+  // Upload Welcome document directly (Organization section only - no link to onboarding templates)
+  async setWelcomeUpload(req, res) {
+    try {
+      const { file } = req.body || {};
+      if (!file || !file.data) {
+        return res.status(400).json({
+          success: false,
+          message: "File data is required",
+        });
+      }
+
+      const base64Data = typeof file === "string" ? file : file.data;
+      const mimeType = typeof file === "string" ? (req.body.mime_type || "application/pdf") : (file.type || "application/pdf");
+      const originalName = typeof file === "string" ? (req.body.file_name || "welcome.pdf") : (file.name || "welcome.pdf");
+
+      const buffer = Buffer.from(base64Data, "base64");
+      const safeName = (originalName || "welcome.pdf").replace(/\s+/g, "_");
+      const blob = await put(
+        `organization-welcome/${Date.now()}_${safeName}`,
+        buffer,
+        { access: "public", contentType: mimeType }
+      );
+
+      await this.model.setSlotFile("welcome", {
+        file_url: blob.url,
+        file_name: originalName,
+        mime_type: mimeType,
+      });
+
+      const updated = await this.model.getBySlot("welcome");
+      return res.json({
+        success: true,
+        message: "Welcome document uploaded",
+        default: updated,
+      });
+    } catch (e) {
+      return res.status(500).json({
+        success: false,
+        message: "Failed to upload Welcome document",
+        error: process.env.NODE_ENV === "production" ? undefined : e.message,
+      });
+    }
+  }
+
+  // Push the current Welcome document to all organizations (supports both template link and direct file)
   async pushToAllOrganizations(req, res) {
     try {
       const slotRow = await this.model.getBySlot("welcome");
-      if (!slotRow || !slotRow.template_document_id) {
+      if (!slotRow) {
         return res.status(400).json({
           success: false,
-          message: "No Welcome document template is configured",
+          message: "No Welcome document configured",
         });
       }
 
-      const template = await this.templateModel.getById(slotRow.template_document_id);
-      if (!template || !template.file_url) {
+      let fileUrl, documentName, mimeType, fileSize;
+
+      if (slotRow.file_url) {
+        // Direct organization upload (no link to onboarding)
+        fileUrl = slotRow.file_url;
+        documentName = slotRow.document_name || slotRow.file_name || "Welcome Document";
+        mimeType = slotRow.mime_type || "application/pdf";
+        fileSize = null;
+      } else if (slotRow.template_document_id) {
+        const template = await this.templateModel.getById(slotRow.template_document_id);
+        if (!template || !template.file_url) {
+          return res.status(400).json({
+            success: false,
+            message: "Template document has no file",
+          });
+        }
+        fileUrl = template.file_url;
+        documentName = template.document_name || "Welcome Document";
+        mimeType = template.mime_type || "application/pdf";
+        fileSize = template.file_size || null;
+      } else {
         return res.status(400).json({
           success: false,
-          message: "Template document has no file",
+          message: "No Welcome document file is configured",
         });
       }
 
-      const orgDocs = await this.documentModel.getBySourceTemplateId(
-        slotRow.template_document_id
-      );
+      let orgDocs;
+      if (slotRow.file_url) {
+        orgDocs = await this.documentModel.getOrganizationWelcomeDocuments();
+      } else {
+        orgDocs = await this.documentModel.getBySourceTemplateId(slotRow.template_document_id);
+      }
 
       let updated = 0;
       for (const doc of orgDocs) {
         await this.documentModel.update(doc.id, {
-          file_path: template.file_url,
-          file_size: template.file_size || null,
-          mime_type: template.mime_type || "application/pdf",
-          document_name: template.document_name || "Welcome Document",
+          file_path: fileUrl,
+          file_size: fileSize,
+          mime_type: mimeType,
+          document_name: documentName,
         });
         updated++;
       }

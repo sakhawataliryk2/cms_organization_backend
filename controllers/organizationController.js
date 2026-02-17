@@ -158,7 +158,21 @@ class OrganizationController {
             let defaultDocument = null;
             try {
                 const welcomeDefault = await this.orgDefaultDocModel.getBySlot('welcome');
-                if (welcomeDefault?.template_document_id) {
+                // Direct organization welcome upload (Document Management > Organization section – no link to onboarding)
+                if (welcomeDefault?.file_url) {
+                    defaultDocument = await this.documentModel.create({
+                        entity_type: 'organization',
+                        entity_id: organization.id,
+                        document_name: welcomeDefault.document_name || welcomeDefault.file_name || 'Welcome Document',
+                        document_type: 'Welcome',
+                        file_path: welcomeDefault.file_url,
+                        file_size: null,
+                        mime_type: welcomeDefault.mime_type || 'application/pdf',
+                        is_auto_generated: true,
+                        content: null,
+                        created_by: userId
+                    });
+                } else if (welcomeDefault?.template_document_id) {
                     const template = await this.templateDocModel.getById(welcomeDefault.template_document_id);
                     if (template?.file_url) {
                         defaultDocument = await this.documentModel.create({

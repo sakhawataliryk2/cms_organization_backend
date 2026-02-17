@@ -74,6 +74,8 @@ function createJobDeleteRequestRouter(deleteRequestController, authMiddleware) {
     // Create delete request
     router.post('/:id/delete-request', deleteRequestController.create);
 
+    router.post('/:id/unarchive-request', deleteRequestController.sendUnarchiveRequest);
+
     // Approve delete request (must come before /:id routes)
     router.post('/delete/:id/approve', deleteRequestController.approve);
 

@@ -113,6 +113,7 @@ function createJobSeekerDeleteRequestRouter(deleteRequestController, authMiddlew
     router.get('/delete/:id', deleteRequestController.getById);
     router.get('/:id/delete-request', deleteRequestController.getByRecord);
     router.post('/:id/delete-request', deleteRequestController.create);
+    router.post('/:id/unarchive-request', deleteRequestController.sendUnarchiveRequest);
     router.post('/delete/:id/approve', deleteRequestController.approve);
     router.post('/delete/:id/deny', deleteRequestController.deny);
 

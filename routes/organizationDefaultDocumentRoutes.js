@@ -17,6 +17,7 @@ module.exports = (pool, authMiddleware) => {
     return controller.getBySlot(req, res);
   });
   router.put("/welcome", express.json(), controller.setWelcome);
+  router.post("/welcome/upload", express.json({ limit: "30mb" }), controller.setWelcomeUpload);
   router.post("/welcome/push-to-all", controller.pushToAllOrganizations);
 
   return router;

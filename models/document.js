@@ -267,6 +267,22 @@ class Document {
         }
     }
 
+    // Get all organization Welcome documents (for push when using direct file upload)
+    async getOrganizationWelcomeDocuments() {
+        let client;
+        try {
+            client = await this.pool.connect();
+            const q = `
+                SELECT * FROM documents
+                WHERE entity_type = 'organization' AND document_type = 'Welcome'
+            `;
+            const r = await client.query(q, []);
+            return r.rows;
+        } finally {
+            if (client) client.release();
+        }
+    }
+
     // Create default welcome document for organization
     async createDefaultOrganizationDocument(organization_id, organization_name, created_by) {
         const welcomeContent = `

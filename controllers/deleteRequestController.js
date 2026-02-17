@@ -1,4 +1,5 @@
 const DeleteRequest = require("../models/deleteRequest");
+const UnarchiveRequest = require("../models/unarchiveRequest");
 const Organization = require("../models/organization");
 const HiringManager = require("../models/hiringManager");
 const JobSeeker = require("../models/jobseeker");
@@ -26,6 +27,7 @@ class DeleteRequestController {
   constructor(pool) {
     this.pool = pool;
     this.deleteRequestModel = new DeleteRequest(pool);
+    this.unarchiveRequestModel = new UnarchiveRequest(pool);
     this.organizationModel = new Organization(pool);
     this.hiringManagerModel = new HiringManager(pool);
     this.jobSeekerModel = new JobSeeker(pool);
@@ -39,6 +41,10 @@ class DeleteRequestController {
     this.deny = this.deny.bind(this);
     this.getByRecord = this.getByRecord.bind(this);
     this.getById = this.getById.bind(this);
+    this.sendUnarchiveRequest = this.sendUnarchiveRequest.bind(this);
+    this.getUnarchiveRequestById = this.getUnarchiveRequestById.bind(this);
+    this.approveUnarchive = this.approveUnarchive.bind(this);
+    this.denyUnarchive = this.denyUnarchive.bind(this);
   }
 
   async initTables() {
@@ -1055,6 +1061,423 @@ class DeleteRequestController {
       throw error;
     } finally {
       client.release();
+    }
+  }
+
+  /**
+   * Default status per record type when unarchiving (clear archived_at, archive_reason).
+   */
+  getDefaultStatusForUnarchive(recordType) {
+    const map = {
+      organization: "Active",
+      hiring_manager: "Active",
+      job_seeker: "New lead",
+      job: "Open",
+      lead: "New Lead",
+      task: "Pending",
+      placement: "Pending",
+    };
+    return map[recordType] || "Active";
+  }
+
+  /**
+   * Execute unarchive: set archived_at = null, archive_reason = null, status = default.
+   */
+  async executeUnarchive(unarchiveRequest) {
+    const recordId = unarchiveRequest.record_id;
+    const recordType = unarchiveRequest.record_type;
+    const defaultStatus = this.getDefaultStatusForUnarchive(recordType);
+    const client = await this.organizationModel.pool.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      if (recordType === "organization") {
+        await this.organizationModel.initTable();
+        await client.query(
+          `
+          UPDATE organizations
+          SET archived_at = NULL, archive_reason = NULL, status = $1, updated_at = CURRENT_TIMESTAMP
+          WHERE id = $2
+        `,
+          [defaultStatus, recordId]
+        );
+        await this.organizationModel.addNote(
+          recordId,
+          "Record unarchived and restored to active following approval.",
+          unarchiveRequest.reviewed_by
+        );
+      } else if (recordType === "hiring_manager") {
+        await this.hiringManagerModel.initTable();
+        await client.query(
+          `
+          UPDATE hiring_managers
+          SET archived_at = NULL, archive_reason = NULL, status = $1, updated_at = CURRENT_TIMESTAMP
+          WHERE id = $2
+        `,
+          [defaultStatus, recordId]
+        );
+        await this.hiringManagerModel.addNote(
+          recordId,
+          "Record unarchived and restored to active following approval.",
+          unarchiveRequest.reviewed_by
+        );
+      } else if (recordType === "job_seeker") {
+        await this.jobSeekerModel.initTable();
+        await client.query(
+          `
+          UPDATE job_seekers
+          SET archived_at = NULL, archive_reason = NULL, status = $1, updated_at = CURRENT_TIMESTAMP
+          WHERE id = $2
+        `,
+          [defaultStatus, recordId]
+        );
+        await client.query(
+          `
+          INSERT INTO job_seeker_notes (job_seeker_id, text, note_type, created_by)
+          VALUES ($1, $2, $3, $4)
+        `,
+          [
+            recordId,
+            "Record unarchived and restored to active following approval.",
+            "General Note",
+            unarchiveRequest.reviewed_by,
+          ]
+        );
+      } else if (recordType === "job") {
+        await this.jobModel.initTable();
+        await client.query(
+          `
+          UPDATE jobs
+          SET archived_at = NULL, archive_reason = NULL, status = $1, updated_at = CURRENT_TIMESTAMP
+          WHERE id = $2
+        `,
+          [defaultStatus, recordId]
+        );
+        await client.query(
+          `INSERT INTO job_notes (job_id, text, created_by) VALUES ($1, $2, $3)`,
+          [
+            recordId,
+            "Record unarchived and restored to active following approval.",
+            unarchiveRequest.reviewed_by,
+          ]
+        );
+      } else if (recordType === "lead") {
+        await this.leadModel.initTable();
+        await client.query(
+          `
+          UPDATE leads
+          SET archived_at = NULL, archive_reason = NULL, status = $1, updated_at = CURRENT_TIMESTAMP
+          WHERE id = $2
+        `,
+          [defaultStatus, recordId]
+        );
+        await client.query(
+          `INSERT INTO lead_notes (lead_id, text, created_by) VALUES ($1, $2, $3)`,
+          [
+            recordId,
+            "Record unarchived and restored to active following approval.",
+            unarchiveRequest.reviewed_by,
+          ]
+        );
+      } else if (recordType === "task") {
+        await this.taskModel.initTable();
+        await client.query(
+          `
+          UPDATE tasks
+          SET archived_at = NULL, archive_reason = NULL, status = $1, updated_at = CURRENT_TIMESTAMP
+          WHERE id = $2
+        `,
+          [defaultStatus, recordId]
+        );
+        await client.query(
+          `INSERT INTO task_notes (task_id, text, created_by) VALUES ($1, $2, $3)`,
+          [
+            recordId,
+            "Record unarchived and restored to active following approval.",
+            unarchiveRequest.reviewed_by,
+          ]
+        );
+      } else if (recordType === "placement") {
+        await this.placementModel.initTable();
+        await client.query(
+          `
+          UPDATE placements
+          SET archived_at = NULL, archive_reason = NULL, status = $1, updated_at = CURRENT_TIMESTAMP
+          WHERE id = $2
+        `,
+          [defaultStatus, recordId]
+        );
+        await client.query(
+          `INSERT INTO placement_notes (placement_id, text, action, about_references, created_by) VALUES ($1, $2, $3, $4, $5)`,
+          [
+            recordId,
+            "Record unarchived and restored to active following approval.",
+            null,
+            null,
+            unarchiveRequest.reviewed_by,
+          ]
+        );
+      } else {
+        await client.query("ROLLBACK");
+        throw new Error(`Unknown record_type for unarchive: ${recordType}`);
+      }
+
+      await client.query("COMMIT");
+    } catch (err) {
+      if (client) {
+        try {
+          await client.query("ROLLBACK");
+        } catch (_) {}
+      }
+      throw err;
+    } finally {
+      if (client && typeof client.release === "function") {
+        client.release();
+      }
+    }
+  }
+
+  async getUnarchiveRequestById(req, res) {
+    try {
+      const { id } = req.params;
+      const request = await this.unarchiveRequestModel.getById(id);
+      if (!request) {
+        return res.status(404).json({
+          success: false,
+          message: "Unarchive request not found",
+        });
+      }
+      return res.json({ success: true, deleteRequest: request });
+    } catch (error) {
+      console.error("Error fetching unarchive request:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to fetch unarchive request",
+        error: process.env.NODE_ENV === "production" ? undefined : error.message,
+      });
+    }
+  }
+
+  async approveUnarchive(req, res) {
+    try {
+      const userId = req.user?.id;
+      const { id } = req.params;
+
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          message: "Authentication required",
+        });
+      }
+
+      const unarchiveRequest = await this.unarchiveRequestModel.getById(id);
+      if (!unarchiveRequest) {
+        return res.status(404).json({
+          success: false,
+          message: "Unarchive request not found",
+        });
+      }
+
+      if (unarchiveRequest.status !== "pending") {
+        return res.status(400).json({
+          success: false,
+          message: `Unarchive request has already been ${unarchiveRequest.status}.`,
+        });
+      }
+
+      const requestWithReviewer = { ...unarchiveRequest, reviewed_by: userId };
+      await this.executeUnarchive(requestWithReviewer);
+
+      const approved = await this.unarchiveRequestModel.approve(id, userId);
+
+      return res.json({
+        success: true,
+        message: "Unarchive request approved; record has been restored to active.",
+        deleteRequest: approved,
+      });
+    } catch (error) {
+      console.error("Error approving unarchive request:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to approve unarchive request",
+        error: process.env.NODE_ENV === "production" ? undefined : error.message,
+      });
+    }
+  }
+
+  async denyUnarchive(req, res) {
+    try {
+      const userId = req.user?.id;
+      const { id } = req.params;
+      const { denial_reason } = req.body;
+
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          message: "Authentication required",
+        });
+      }
+      if (!denial_reason || !String(denial_reason).trim()) {
+        return res.status(400).json({
+          success: false,
+          message: "Denial reason is required",
+        });
+      }
+
+      const unarchiveRequest = await this.unarchiveRequestModel.getById(id);
+      if (!unarchiveRequest) {
+        return res.status(404).json({
+          success: false,
+          message: "Unarchive request not found",
+        });
+      }
+      if (unarchiveRequest.status !== "pending") {
+        return res.status(400).json({
+          success: false,
+          message: `Unarchive request has already been ${unarchiveRequest.status}.`,
+        });
+      }
+
+      const denied = await this.unarchiveRequestModel.deny(
+        id,
+        String(denial_reason).trim(),
+        userId
+      );
+
+      return res.json({
+        success: true,
+        message: "Unarchive request denied",
+        deleteRequest: denied,
+      });
+    } catch (error) {
+      console.error("Error denying unarchive request:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to deny unarchive request",
+        error: process.env.NODE_ENV === "production" ? undefined : error.message,
+      });
+    }
+  }
+
+  /**
+   * Send unarchive request: create DB record, then email with Approve/Deny links to /dashboard/unarchive/[id]/approve and /deny.
+   */
+  async sendUnarchiveRequest(req, res) {
+    try {
+      const { id } = req.params;
+      let recordType = req.recordType || req.body.record_type;
+      if (!recordType && req.baseUrl) {
+        if (req.baseUrl.includes("job-seekers")) recordType = "job_seeker";
+        else if (req.baseUrl.includes("hiring-managers")) recordType = "hiring_manager";
+        else if (req.baseUrl.includes("organizations")) recordType = "organization";
+        else if (req.baseUrl.includes("jobs")) recordType = "job";
+        else if (req.baseUrl.includes("leads")) recordType = "lead";
+        else if (req.baseUrl.includes("tasks")) recordType = "task";
+        else if (req.baseUrl.includes("placements")) recordType = "placement";
+      }
+      recordType = recordType || "organization";
+      const { reason, record_number } = req.body;
+
+      if (!reason || !String(reason).trim()) {
+        return res.status(400).json({
+          success: false,
+          message: "Reason is required",
+        });
+      }
+
+      const userId = req.user?.id || req.user?.userId;
+      let user = { name: "Unknown", email: "" };
+      if (userId && this.pool) {
+        const client = await this.pool.connect();
+        try {
+          const userQuery = await client.query(
+            "SELECT name, email FROM users WHERE id = $1",
+            [userId]
+          );
+          user = userQuery.rows[0] || user;
+        } finally {
+          client.release();
+        }
+      }
+
+      const requestedBy = req.body.requested_by || user.name;
+      const requestedByEmail = req.body.requested_by_email || user.email;
+      const recordDisplay = String(record_number || id);
+
+      const unarchiveRow = await this.unarchiveRequestModel.create({
+        record_id: parseInt(id, 10),
+        record_type: recordType,
+        record_number: recordDisplay,
+        requested_by: userId || null,
+        requested_by_name: requestedBy,
+        requested_by_email: requestedByEmail,
+        reason: String(reason).trim(),
+      });
+      const requestId = unarchiveRow.id;
+
+      const approvalUrl = `${BASE_URL}/dashboard/unarchive/${requestId}/approve`;
+      const denyUrl = `${BASE_URL}/dashboard/unarchive/${requestId}/deny`;
+
+      const templateTypeMap = {
+        organization: "ORGANIZATION_UNARCHIVE_REQUEST",
+        hiring_manager: "HIRING_MANAGER_UNARCHIVE_REQUEST",
+        job_seeker: "JOB_SEEKER_UNARCHIVE_REQUEST",
+        job: "JOB_UNARCHIVE_REQUEST",
+        lead: "LEAD_UNARCHIVE_REQUEST",
+        task: "TASK_UNARCHIVE_REQUEST",
+        placement: "PLACEMENT_UNARCHIVE_REQUEST",
+      };
+      const templateType = templateTypeMap[recordType] || "ORGANIZATION_UNARCHIVE_REQUEST";
+
+      const toEmail =
+        recordType === "job_seeker"
+          ? "onboarding@completestaffingsolutions.com"
+          : process.env.PAYROLL_EMAIL || "Payroll@completestaffingsolutions.com";
+
+      const requestDate = new Date().toLocaleString();
+      const vars = {
+        requestedBy,
+        requestedByEmail,
+        recordType,
+        recordNumber: recordDisplay,
+        reason: String(reason).trim(),
+        requestDate,
+        approvalUrl,
+        denyUrl,
+      };
+
+      const tpl = await this.emailTemplateModel.getTemplateByType(templateType);
+      if (tpl) {
+        const subject = renderTemplate(tpl.subject, vars, []);
+        let html = renderTemplate(tpl.body, vars, []);
+        html = html.replace(/\r\n/g, "\n").replace(/\n/g, "<br/>");
+        await sendMail({ to: toEmail, subject, html });
+      } else {
+        const subject = `Unarchive Request: ${recordType} ${recordDisplay}`;
+        const html = `
+          <h2>Unarchive Request</h2>
+          <p>An unarchive request has been submitted.</p>
+          <p><strong>Record (${recordType}):</strong> ${recordDisplay}</p>
+          <p><strong>Requested By:</strong> ${vars.requestedBy} (${vars.requestedByEmail})</p>
+          <p><strong>Request Date:</strong> ${requestDate}</p>
+          <p><strong>Reason:</strong> ${vars.reason}</p>
+          <p><a href="${approvalUrl}">Approve Unarchive</a> | <a href="${denyUrl}">Deny Unarchive</a></p>
+        `.replace(/\n/g, "<br/>");
+        await sendMail({ to: toEmail, subject, html });
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: "Unarchive request sent successfully",
+      });
+    } catch (error) {
+      console.error("Error sending unarchive request:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to send unarchive request",
+        error: process.env.NODE_ENV === "production" ? undefined : error.message,
+      });
     }
   }
 }
