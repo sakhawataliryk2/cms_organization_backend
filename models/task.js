@@ -22,7 +22,7 @@ class Task {
                     due_date DATE,
                     due_time TIME,
                     organization_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE,
-                    job_seeker_id INTEGER REFERENCES job_seekers(id),
+                    job_seeker_id INTEGER REFERENCES job_seekers(id) ON DELETE CASCADE,
                     hiring_manager_id INTEGER REFERENCES hiring_managers(id),
                     job_id INTEGER REFERENCES jobs(id),
                     lead_id INTEGER REFERENCES leads(id),
@@ -85,6 +85,16 @@ class Task {
             `);
             await client.query(`
                 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS archive_reason VARCHAR(50)
+            `);
+
+            // Ensure job_seeker_id uses ON DELETE CASCADE for existing installations
+            await client.query(`
+                ALTER TABLE tasks
+                DROP CONSTRAINT IF EXISTS tasks_job_seeker_id_fkey,
+                ADD CONSTRAINT tasks_job_seeker_id_fkey
+                    FOREIGN KEY (job_seeker_id)
+                    REFERENCES job_seekers(id)
+                    ON DELETE CASCADE
             `);
 
             // Create task notes table

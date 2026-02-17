@@ -1,4 +1,5 @@
 const bcrypt = require('bcrypt');
+const { allocateRecordNumber, releaseRecordNumber } = require('../services/recordNumberService');
 
 let jobSeekerTablesInitialized = false;
 
@@ -41,7 +42,8 @@ class JobSeeker {
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     custom_fields JSONB,
                     archived_at TIMESTAMP,
-                    archive_reason VARCHAR(50)
+                    archive_reason VARCHAR(50),
+                    record_number INTEGER
                 )
             `);
             await client.query(`
@@ -155,6 +157,9 @@ class JobSeeker {
             // Begin transaction
             await client.query('BEGIN');
 
+            // Allocate business record number (display-only)
+            const recordNumber = await allocateRecordNumber(client, 'job_seeker');
+
             // ✅ Convert custom fields for PostgreSQL JSONB (same pattern as Organizations)
             let customFieldsJson = '{}';
             
@@ -210,9 +215,10 @@ class JobSeeker {
                     date_added,
                     last_contact_date,
                     created_by,
-                    custom_fields
+                    custom_fields,
+                    record_number
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
                 RETURNING *
             `;
 
@@ -237,7 +243,8 @@ class JobSeeker {
                 dateAdded || new Date().toISOString().split('T')[0],
                 lastContactDate || null,
                 userId,
-                customFieldsJson  // Pass JSON string - consistent with Organizations
+                customFieldsJson,  // Pass JSON string - consistent with Organizations
+                recordNumber
             ];
 
             // Debug log the SQL and values
@@ -591,6 +598,11 @@ class JobSeeker {
             ];
 
             await client.query(historyQuery, historyValues);
+
+            // Release record_number back to pool for reuse
+            if (jobSeeker.record_number != null) {
+                await releaseRecordNumber(client, 'job_seeker', jobSeeker.record_number);
+            }
 
             // Delete the job seeker
             const deleteQuery = 'DELETE FROM job_seekers WHERE id = $1 RETURNING *';

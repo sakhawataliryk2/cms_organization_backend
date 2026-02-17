@@ -8,7 +8,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const ALLOWED_MODULES = ['task', 'job', 'organization', 'hiring_manager', 'lead', 'placement'];
+const ALLOWED_MODULES = ['task', 'job', 'organization', 'hiring_manager', 'lead', 'placement', 'job_seeker'];
 
 function validateModule(moduleType) {
     if (!ALLOWED_MODULES.includes(moduleType)) {
@@ -63,6 +63,7 @@ const PREFIX_MAP = {
     hiring_manager: 'HM',
     lead: 'L',
     placement: 'P',
+    job_seeker: 'JS',
 };
 
 function formatDisplayRecordNumber(moduleType, recordNumber) {

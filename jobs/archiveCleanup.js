@@ -130,7 +130,7 @@ async function runArchiveCleanup(pool) {
     // ---------- Job Seekers ----------
     const archivedJsResult = await client.query(
       `
-      SELECT js.id, js.first_name, js.last_name
+      SELECT js.id, js.first_name, js.last_name, js.record_number
       FROM job_seekers js
       WHERE js.status = 'Archived'
         AND js.archived_at IS NOT NULL
@@ -143,6 +143,10 @@ async function runArchiveCleanup(pool) {
     for (const js of archivedJs) {
       const jsName = `${js.last_name || ""}, ${js.first_name || ""}`.trim() || `ID ${js.id}`;
       console.log(`Cleaning up archived job seeker: ${jsName} (ID: ${js.id})`);
+
+      if (js.record_number != null) {
+        await releaseRecordNumber(client, "job_seeker", js.record_number);
+      }
 
       await client.query(
         "DELETE FROM job_seeker_notes WHERE job_seeker_id = $1",
