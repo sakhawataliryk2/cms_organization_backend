@@ -56,7 +56,8 @@ const verifyToken = (pool) => {
                 req.user = {
                     id: user.id,
                     email: user.email,
-                    role: user.role
+                    role: user.role,
+                    is_admin: user.is_admin
                 };
 
                 console.log('User found and authenticated:', req.user);
@@ -97,7 +98,9 @@ const checkRole = (...roles) => {
             });
         }
 
-        if (!roles.includes(req.user.role)) {
+        const hasRole = roles.includes(req.user.role);
+        const isAdminByFlag = req.user.is_admin === true && roles.includes('admin');
+        if (!hasRole && !isAdminByFlag) {
             return res.status(403).json({
                 success: false,
                 message: 'Access denied. Insufficient permissions.'

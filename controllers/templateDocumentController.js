@@ -79,10 +79,23 @@ class TemplateDocumentController {
     try {
       const userId = req.user?.id || null;
 
-      const file = req.file || null;
+      // Support JSON body with base64 file (same pattern as organization/jobs upload)
+      const fileFromBody = req.body.file || null;
+      let file = null;
+      if (fileFromBody && fileFromBody.data) {
+        const buffer = Buffer.from(fileFromBody.data, "base64");
+        file = {
+          originalname: fileFromBody.name || "document.pdf",
+          mimetype: fileFromBody.type || "application/pdf",
+          buffer,
+          size: buffer.length,
+        };
+      }
 
       const notification_user_ids = req.body.notification_user_ids
-        ? JSON.parse(req.body.notification_user_ids)
+        ? (typeof req.body.notification_user_ids === "string"
+            ? JSON.parse(req.body.notification_user_ids)
+            : req.body.notification_user_ids)
         : [];
 
       let file_url = null;
@@ -139,11 +152,25 @@ class TemplateDocumentController {
   async update(req, res) {
     try {
       const id = req.params.id;
-      const file = req.file || null;
+
+      // Support JSON body with base64 file (same pattern as organization/jobs upload)
+      const fileFromBody = req.body.file || null;
+      let file = null;
+      if (fileFromBody && fileFromBody.data) {
+        const buffer = Buffer.from(fileFromBody.data, "base64");
+        file = {
+          originalname: fileFromBody.name || "document.pdf",
+          mimetype: fileFromBody.type || "application/pdf",
+          buffer,
+          size: buffer.length,
+        };
+      }
 
       const notification_user_ids =
         req.body.notification_user_ids !== undefined
-          ? JSON.parse(req.body.notification_user_ids)
+          ? (typeof req.body.notification_user_ids === "string"
+              ? JSON.parse(req.body.notification_user_ids)
+              : req.body.notification_user_ids)
           : undefined;
 
       let file_url = null;

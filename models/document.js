@@ -29,6 +29,17 @@ class Document {
                 )
             `);
 
+            await client.query(`
+                ALTER TABLE documents
+                ADD COLUMN IF NOT EXISTS source_template_document_id INTEGER
+            `);
+
+            await client.query(`
+                CREATE INDEX IF NOT EXISTS idx_documents_source_template
+                ON documents(source_template_document_id)
+                WHERE source_template_document_id IS NOT NULL
+            `);
+
             // Create index for faster lookups
             await client.query(`
                 CREATE INDEX IF NOT EXISTS idx_documents_entity 
@@ -58,7 +69,8 @@ class Document {
             mime_type,
             is_auto_generated,
             content,
-            created_by
+            created_by,
+            source_template_document_id
         } = documentData;
 
         let client;
@@ -69,9 +81,9 @@ class Document {
                 INSERT INTO documents (
                     entity_type, entity_id, document_name, document_type,
                     file_path, file_size, mime_type, is_auto_generated,
-                    content, created_by, created_at, updated_at
+                    content, created_by, source_template_document_id, created_at, updated_at
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 RETURNING *
             `;
 
@@ -85,7 +97,8 @@ class Document {
                 mime_type || 'text/plain',
                 is_auto_generated || false,
                 content || null,
-                created_by
+                created_by,
+                source_template_document_id || null
             ];
 
             const result = await client.query(query, values);
@@ -184,24 +197,29 @@ class Document {
         const {
             document_name,
             document_type,
-            content
+            content,
+            file_path,
+            file_size,
+            mime_type
         } = documentData;
 
         let client;
         try {
             client = await this.pool.connect();
 
+            const updates = ['document_name = COALESCE($1, document_name)', 'document_type = COALESCE($2, document_type)', 'content = COALESCE($3, content)'];
+            const values = [document_name ?? null, document_type ?? null, content ?? null];
+            let idx = 4;
+            if (file_path !== undefined) { updates.push(`file_path = $${idx}`); values.push(file_path); idx++; }
+            if (file_size !== undefined) { updates.push(`file_size = $${idx}`); values.push(file_size); idx++; }
+            if (mime_type !== undefined) { updates.push(`mime_type = $${idx}`); values.push(mime_type); idx++; }
+            values.push(id);
             const query = `
                 UPDATE documents
-                SET document_name = COALESCE($1, document_name),
-                    document_type = COALESCE($2, document_type),
-                    content = COALESCE($3, content),
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE id = $4
+                SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP
+                WHERE id = $${idx}
                 RETURNING *
             `;
-
-            const values = [document_name, document_type, content, id];
             const result = await client.query(query, values);
             return result.rows[0];
         } catch (error) {
@@ -230,6 +248,22 @@ class Document {
             if (client) {
                 client.release();
             }
+        }
+    }
+
+    // Get documents by source template (for push-to-all)
+    async getBySourceTemplateId(template_document_id) {
+        let client;
+        try {
+            client = await this.pool.connect();
+            const q = `
+                SELECT * FROM documents
+                WHERE source_template_document_id = $1 AND entity_type = 'organization'
+            `;
+            const r = await client.query(q, [template_document_id]);
+            return r.rows;
+        } finally {
+            if (client) client.release();
         }
     }
 

@@ -130,15 +130,43 @@ class Placement {
         }
     }
 
+    // Resolve value from custom_fields using multiple possible labels (admin can use different names)
+    _resolveFromCustomFields(cf, labelVariants) {
+        if (!cf || typeof cf !== 'object') return undefined;
+        for (const label of labelVariants) {
+            const v = cf[label];
+            if (v !== undefined && v !== null && String(v).trim() !== '') return v;
+        }
+        return undefined;
+    }
+
     // Create a new placement
     async create(placementData) {
+        const finalCustomFields = placementData.custom_fields || placementData.customFields;
+        const cf = (typeof finalCustomFields === 'object' && !Array.isArray(finalCustomFields) && finalCustomFields !== null)
+            ? finalCustomFields
+            : (typeof finalCustomFields === 'string' ? (() => { try { return JSON.parse(finalCustomFields); } catch { return {}; } })() : {});
+
+        // Resolve job_id, job_seeker_id, start_date, organization_id - from top-level first, else from custom_fields
+        let job_id = placementData.job_id ?? this._resolveFromCustomFields(cf, ['Job ID', 'Job', 'job_id']);
+        let job_seeker_id = placementData.job_seeker_id ?? this._resolveFromCustomFields(cf, ['Job Seeker ID', 'Job Seeker', 'Candidate', 'job_seeker_id']);
+        let start_date = placementData.start_date ?? this._resolveFromCustomFields(cf, ['Start Date', 'start_date']);
+        let organization_id = placementData.organization_id ?? this._resolveFromCustomFields(cf, ['Organization', 'Organization Name', 'organization_id']);
+
+        // Normalize IDs to numbers where needed
+        if (job_id != null) { const n = Number(job_id); job_id = !isNaN(n) ? n : null; }
+        if (job_seeker_id != null) { const n = Number(job_seeker_id); job_seeker_id = !isNaN(n) ? n : null; }
+        if (organization_id != null) { const n = Number(organization_id); organization_id = !isNaN(n) ? n : null; }
+
+        // Normalize start_date to YYYY-MM-DD if in mm/dd/yyyy from custom_fields
+        if (start_date && typeof start_date === 'string') {
+            const m = start_date.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+            if (m) start_date = `${m[3]}-${m[1]}-${m[2]}`;
+        }
+
         const {
-            job_id,
-            job_seeker_id,
-            organization_id,
             placement_type,
             status,
-            start_date,
             internal_email_notification,
             salary,
             placement_fee_percent,
@@ -162,7 +190,6 @@ class Placement {
 
             // Handle custom_fields - accept both customFields and custom_fields, convert object to JSON string for JSONB
             let customFieldsJson = null;
-            const finalCustomFields = custom_fields || placementData.customFields;
             
             if (finalCustomFields) {
                 if (typeof finalCustomFields === 'string') {

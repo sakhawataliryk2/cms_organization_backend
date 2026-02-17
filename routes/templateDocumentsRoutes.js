@@ -1,5 +1,4 @@
 const express = require("express");
-const uploadTemplatePdf = require("../middleware/uploadTemplatePdf");
 
 module.exports = (pool, authMiddleware) => {
   const router = express.Router();
@@ -15,8 +14,9 @@ module.exports = (pool, authMiddleware) => {
   router.get("/", controller.getAll);
   router.get("/:id", controller.getById);
 
-  router.post("/", uploadTemplatePdf.single("file"), controller.create);
-  router.put("/:id", uploadTemplatePdf.single("file"), controller.update);
+  // JSON body with base64 file (same pattern as organization/jobs document upload) to avoid "unexpected end of form"
+  router.post("/", express.json({ limit: "30mb" }), controller.create);
+  router.put("/:id", express.json({ limit: "30mb" }), controller.update);
 
   router.patch("/:id/archive", express.json(), controller.archive);
 

@@ -1,4 +1,5 @@
 const bcrypt = require('bcrypt');
+const { allocateRecordNumber, releaseRecordNumber, runMigrationIfNeeded } = require('../services/recordNumberService');
 
 class Task {
     constructor(pool) {
@@ -129,6 +130,8 @@ class Task {
                     performed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             `);
+
+            await runMigrationIfNeeded(client);
 
             console.log('✅ Tasks tables initialized successfully');
             return true;
@@ -264,8 +267,11 @@ class Task {
             
             console.log("Custom fields JSON to insert:", customFieldsJson);
 
+            const recordNumber = await allocateRecordNumber(client, 'task');
+
             const insertTaskQuery = `
                 INSERT INTO tasks (
+                    record_number,
                     title,
                     description,
                     is_completed,
@@ -285,7 +291,7 @@ class Task {
                     custom_fields,
                     reminder_minutes_before_due
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
                 RETURNING *
             `;
 
@@ -294,6 +300,7 @@ class Task {
             console.log("Task model - dueTime:", finalDueTime);
             
             const values = [
+                recordNumber,
                 title,
                 description,
                 isCompleted || false,
@@ -640,6 +647,10 @@ class Task {
             ];
 
             await client.query(historyQuery, historyValues);
+
+            if (task.record_number != null) {
+                await releaseRecordNumber(client, 'task', task.record_number);
+            }
 
             // Delete the task
             const deleteQuery = 'DELETE FROM tasks WHERE id = $1 RETURNING *';

@@ -4,6 +4,8 @@ const Team = require('../models/team');
 const User = require('../models/user');
 const Document = require('../models/document');
 const Placement = require('../models/placement');
+const OrganizationDefaultDocument = require('../models/organizationDefaultDocument');
+const TemplateDocument = require('../models/templateDocument');
 const { put } = require('@vercel/blob');
 
 class OrganizationController {
@@ -14,6 +16,8 @@ class OrganizationController {
         this.userModel = new User(pool);
         this.documentModel = new Document(pool);
         this.placementModel = new Placement(pool);
+        this.orgDefaultDocModel = new OrganizationDefaultDocument(pool);
+        this.templateDocModel = new TemplateDocument(pool);
         this.create = this.create.bind(this);
         this.getAll = this.getAll.bind(this);
         this.getById = this.getById.bind(this);
@@ -41,6 +45,7 @@ class OrganizationController {
     async initTables() {
         await this.organizationModel.initTable();
         await this.documentModel.initTable();
+        await this.orgDefaultDocModel.initTable();
     }
 
     // Get dependency counts for an organization
@@ -152,11 +157,32 @@ class OrganizationController {
 
             let defaultDocument = null;
             try {
-                defaultDocument = await this.documentModel.createDefaultOrganizationDocument(
-                    organization.id,
-                    organization.name,
-                    userId
-                );
+                const welcomeDefault = await this.orgDefaultDocModel.getBySlot('welcome');
+                if (welcomeDefault?.template_document_id) {
+                    const template = await this.templateDocModel.getById(welcomeDefault.template_document_id);
+                    if (template?.file_url) {
+                        defaultDocument = await this.documentModel.create({
+                            entity_type: 'organization',
+                            entity_id: organization.id,
+                            document_name: template.document_name || 'Welcome Document',
+                            document_type: 'Welcome',
+                            file_path: template.file_url,
+                            file_size: template.file_size || null,
+                            mime_type: template.mime_type || 'application/pdf',
+                            is_auto_generated: true,
+                            content: null,
+                            created_by: userId,
+                            source_template_document_id: template.id
+                        });
+                    }
+                }
+                if (!defaultDocument) {
+                    defaultDocument = await this.documentModel.createDefaultOrganizationDocument(
+                        organization.id,
+                        organization.name,
+                        userId
+                    );
+                }
             } catch (docError) {
                 console.error('Error creating default document:', docError);
                 // Don't fail organization creation if document creation fails

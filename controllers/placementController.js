@@ -34,33 +34,29 @@ class PlacementController {
         await this.documentModel.initTable();
     }
 
-    // Validate date range (end_date must not be earlier than start_date)
+    // Validate date range (end_date must not be earlier than start_date when both are provided)
     validateDateRange(startDate, endDate) {
-        if (!startDate) {
-            return { valid: false, message: 'Start date is required' };
+        if (!startDate || !endDate) {
+            return { valid: true };
+        }
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+
+        // Check if dates are valid
+        if (isNaN(start.getTime())) {
+            return { valid: false, message: 'Invalid start date format' };
+        }
+        if (isNaN(end.getTime())) {
+            return { valid: false, message: 'Invalid end date format' };
         }
 
-        if (endDate) {
-            const start = new Date(startDate);
-            const end = new Date(endDate);
-
-            // Check if dates are valid
-            if (isNaN(start.getTime())) {
-                return { valid: false, message: 'Invalid start date format' };
-            }
-            if (isNaN(end.getTime())) {
-                return { valid: false, message: 'Invalid end date format' };
-            }
-
-            // Check if end_date is earlier than start_date
-            if (end < start) {
-                return { 
-                    valid: false, 
-                    message: 'End date cannot be earlier than start date' 
-                };
-            }
+        // Check if end_date is earlier than start_date
+        if (end < start) {
+            return {
+                valid: false,
+                message: 'End date cannot be earlier than start date'
+            };
         }
-
         return { valid: true };
     }
 
@@ -68,15 +64,7 @@ class PlacementController {
     async create(req, res) {
         const placementData = req.body;
 
-        // Basic validation
-        if (!placementData.job_id || !placementData.job_seeker_id || !placementData.start_date) {
-            return res.status(400).json({
-                success: false,
-                message: 'Job ID, Job Seeker ID, and Start Date are required'
-            });
-        }
-
-        // Validate date range
+        // Validate date range (end_date must not be earlier than start_date when both provided)
         const dateValidation = this.validateDateRange(
             placementData.start_date,
             placementData.end_date
@@ -110,6 +98,15 @@ class PlacementController {
             });
         } catch (error) {
             console.error('Detailed error creating placement:', error);
+            // Handle DB constraint violations (e.g. NOT NULL) with a generic message - validation is driven by admin field config
+            const code = error.code || error.constraint;
+            const msg = (error.message || '').toLowerCase();
+            if (code === '23502' || msg.includes('not-null') || msg.includes('null value')) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Please ensure all required fields are filled'
+                });
+            }
             res.status(500).json({
                 success: false,
                 message: 'An error occurred while creating the placement',

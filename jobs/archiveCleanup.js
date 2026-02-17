@@ -3,6 +3,7 @@
 
 const Organization = require("../models/organization");
 const Transfer = require("../models/transfer");
+const { releaseRecordNumber } = require("../services/recordNumberService");
 
 async function runArchiveCleanup(pool) {
   const client = await pool.connect();
@@ -13,7 +14,7 @@ async function runArchiveCleanup(pool) {
     // ---------- Organizations ----------
     const archivedOrgsResult = await client.query(
       `
-      SELECT DISTINCT o.id, o.name
+      SELECT DISTINCT o.id, o.name, o.record_number
       FROM organizations o
       WHERE o.status = 'Archived'
         AND o.archived_at IS NOT NULL
@@ -36,6 +37,16 @@ async function runArchiveCleanup(pool) {
         "DELETE FROM hiring_managers WHERE organization_id = $1",
         [org.id]
       );
+      // Release job record_numbers before hard delete so they can be reused
+      const orgJobs = await client.query(
+        "SELECT id, record_number FROM jobs WHERE organization_id = $1",
+        [org.id]
+      );
+      for (const j of orgJobs.rows) {
+        if (j.record_number != null) {
+          await releaseRecordNumber(client, "job", j.record_number);
+        }
+      }
       await client.query("DELETE FROM jobs WHERE organization_id = $1", [org.id]);
       await client.query("DELETE FROM leads WHERE organization_id = $1", [org.id]);
       await client.query(
@@ -50,6 +61,9 @@ async function runArchiveCleanup(pool) {
         "DELETE FROM organization_documents WHERE organization_id = $1",
         [org.id]
       );
+      if (org.record_number != null) {
+        await releaseRecordNumber(client, "organization", org.record_number);
+      }
       await client.query("DELETE FROM organizations WHERE id = $1", [org.id]);
 
       await client.query(
@@ -200,7 +214,7 @@ async function runArchiveCleanup(pool) {
     // ---------- Tasks ----------
     const archivedTasksResult = await client.query(
       `
-      SELECT t.id, t.title
+      SELECT t.id, t.title, t.record_number
       FROM tasks t
       WHERE t.status = 'Archived'
         AND t.archived_at IS NOT NULL
@@ -221,6 +235,9 @@ async function runArchiveCleanup(pool) {
         "DELETE FROM task_history WHERE task_id = $1",
         [task.id]
       );
+      if (task.record_number != null) {
+        await releaseRecordNumber(client, "task", task.record_number);
+      }
       await client.query("DELETE FROM tasks WHERE id = $1", [task.id]);
 
       await client.query(
@@ -278,7 +295,7 @@ async function runArchiveCleanup(pool) {
     // ---------- Jobs ----------
     const archivedJobsResult = await client.query(
       `
-      SELECT j.id, j.job_title
+      SELECT j.id, j.job_title, j.record_number
       FROM jobs j
       WHERE j.status = 'Archived'
         AND j.archived_at IS NOT NULL
@@ -299,6 +316,9 @@ async function runArchiveCleanup(pool) {
         "DELETE FROM job_history WHERE job_id = $1",
         [job.id]
       );
+      if (job.record_number != null) {
+        await releaseRecordNumber(client, "job", job.record_number);
+      }
       await client.query("DELETE FROM jobs WHERE id = $1", [job.id]);
 
       await client.query(

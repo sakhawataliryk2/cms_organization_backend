@@ -1,5 +1,6 @@
 // This is the updated Job model - models/job.js 
 const bcrypt = require('bcrypt');
+const { allocateRecordNumber, releaseRecordNumber, runMigrationIfNeeded } = require('../services/recordNumberService');
 
 class Job {
     constructor(pool) {
@@ -107,6 +108,8 @@ class Job {
                 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS archive_reason VARCHAR(50)
             `);
 
+            await runMigrationIfNeeded(client);
+
             console.log('✅ Jobs tables initialized successfully');
             return true;
         } catch (error) {
@@ -207,9 +210,12 @@ class Job {
             console.log("  - Final JSON string length:", customFieldsJson.length);
             console.log("  - Parsed keys count:", customFieldsJson !== '{}' ? Object.keys(JSON.parse(customFieldsJson)).length : 0);
 
+            const recordNumber = await allocateRecordNumber(client, 'job');
+
             // Set up insert statement with column names matching the database
             const insertJobQuery = `
             INSERT INTO jobs (
+            record_number,
             job_title,
             job_type,
             category,
@@ -233,12 +239,13 @@ class Job {
             created_by,
             custom_fields
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
             RETURNING *
         `;
 
             // Prepare values in the same order as the columns in the query
             const values = [
+                recordNumber,
                 jobTitle,
                 jobType,
                 category,
@@ -711,6 +718,10 @@ class Job {
             ];
 
             await client.query(historyQuery, historyValues);
+
+            if (job.record_number != null) {
+                await releaseRecordNumber(client, 'job', job.record_number);
+            }
 
             // Delete the job
             const deleteQuery = 'DELETE FROM jobs WHERE id = $1 RETURNING *';

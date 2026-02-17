@@ -77,6 +77,7 @@ const { createAppointmentRouter, createZoomWebhookRouter } = require("./routes/a
 const createOfficeRouter = require("./routes/officeRoutes");
 const createTeamRouter = require("./routes/teamRoutes");
 const createTemplateDocumentsRouter = require("./routes/templateDocumentsRoutes");
+const createOrganizationDefaultDocumentRouter = require("./routes/organizationDefaultDocumentRoutes");
 const createScrapeRouter = require("./routes/scrapeRoutes");
 
 const packetRoutes = require("./routes/packetRoutes");
@@ -749,6 +750,11 @@ app.use("/api/teams", sanitizeInputs, (req, res, next) => {
 app.use("/api/template-documents", sanitizeInputs, (req, res, next) => {
   const authMiddleware = { verifyToken: verifyToken(getPool()), checkRole };
   const router = createTemplateDocumentsRouter(getPool(), authMiddleware);
+  router(req, res, next);
+});
+app.use("/api/organization-default-documents", sanitizeInputs, (req, res, next) => {
+  const authMiddleware = { verifyToken: verifyToken(getPool()), checkRole };
+  const router = createOrganizationDefaultDocumentRouter(getPool(), authMiddleware);
   router(req, res, next);
 });
 app.use("/api/packets", sanitizeInputs, (req, res, next) => {

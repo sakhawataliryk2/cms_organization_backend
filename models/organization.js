@@ -1,5 +1,6 @@
 // COMPLETE FIXED models/organization.js file
 const bcrypt = require('bcrypt');
+const { allocateRecordNumber, releaseRecordNumber, runMigrationIfNeeded } = require('../services/recordNumberService');
 
 class Organization {
     constructor(pool) {
@@ -122,6 +123,8 @@ class Organization {
                 )
             `);
 
+            await runMigrationIfNeeded(client);
+
             console.log('✅ Organizations tables initialized successfully');
             return true;
         } catch (error) {
@@ -215,9 +218,12 @@ class Organization {
             console.log("  - Final JSON string length:", customFieldsJson.length);
             console.log("  - Parsed keys count:", customFieldsJson !== '{}' ? Object.keys(JSON.parse(customFieldsJson)).length : 0);
 
+            const recordNumber = await allocateRecordNumber(client, 'organization');
+
             // Set up insert statement with exact column names matching the database
             const insertOrgQuery = `
                 INSERT INTO organizations (
+                    record_number,
                     name, 
                     nicknames, 
                     parent_organization, 
@@ -236,12 +242,13 @@ class Organization {
                     address,
                     custom_fields
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
                 RETURNING *
             `;
 
             // FIXED: Use helper function to safely parse integer fields
             const values = [
+                recordNumber,
                 name,
                 nicknames,
                 parent_organization,
@@ -1054,6 +1061,10 @@ class Organization {
             ];
 
             await client.query(historyQuery, historyValues);
+
+            if (organization.record_number != null) {
+                await releaseRecordNumber(client, 'organization', organization.record_number);
+            }
 
             // Delete the organization
             const deleteQuery = 'DELETE FROM organizations WHERE id = $1 RETURNING *';
