@@ -1,5 +1,5 @@
 // models/placement.js
-const { allocateRecordNumber, releaseRecordNumber } = require('../services/recordNumberService');
+const { allocateRecordNumber, releaseRecordNumber, runMigrationIfNeeded } = require('../services/recordNumberService');
 
 class Placement {
     constructor(pool) {
@@ -12,6 +12,9 @@ class Placement {
         try {
             console.log('Initializing placements table if needed...');
             client = await this.pool.connect();
+
+            // Ensure reusable record number infrastructure (including placement_record_number_seq) exists
+            await runMigrationIfNeeded(client);
 
             await client.query(`
                 CREATE TABLE IF NOT EXISTS placements (
@@ -164,7 +167,7 @@ class Placement {
             : (typeof finalCustomFields === 'string' ? (() => { try { return JSON.parse(finalCustomFields); } catch { return {}; } })() : {});
 
         // Resolve job_id, job_seeker_id, start_date, organization_id - from top-level first, else from custom_fields
-        let job_id = placementData.job_id ?? this._resolveFromCustomFields(cf, ['Job ID', 'Job', 'job_id']);
+        let job_id = placementData.job_id ?? placementData.jobId ?? this._resolveFromCustomFields(cf, ['Job ID', 'Job', 'job_id']);
         let job_seeker_id = placementData.job_seeker_id ?? this._resolveFromCustomFields(cf, ['Job Seeker ID', 'Job Seeker', 'Candidate', 'job_seeker_id']);
         let start_date = placementData.start_date ?? this._resolveFromCustomFields(cf, ['Start Date', 'start_date']);
         let organization_id = placementData.organization_id ?? this._resolveFromCustomFields(cf, ['Organization', 'Organization Name', 'organization_id']);

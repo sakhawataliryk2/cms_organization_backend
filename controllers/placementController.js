@@ -35,47 +35,9 @@ class PlacementController {
         await this.documentModel.initTable();
     }
 
-    // Validate date range (end_date must not be earlier than start_date when both are provided)
-    validateDateRange(startDate, endDate) {
-        if (!startDate || !endDate) {
-            return { valid: true };
-        }
-        const start = new Date(startDate);
-        const end = new Date(endDate);
-
-        // Check if dates are valid
-        if (isNaN(start.getTime())) {
-            return { valid: false, message: 'Invalid start date format' };
-        }
-        if (isNaN(end.getTime())) {
-            return { valid: false, message: 'Invalid end date format' };
-        }
-
-        // Check if end_date is earlier than start_date
-        if (end < start) {
-            return {
-                valid: false,
-                message: 'End date cannot be earlier than start date'
-            };
-        }
-        return { valid: true };
-    }
-
     // Create a new placement
     async create(req, res) {
         const placementData = req.body;
-
-        // Validate date range (end_date must not be earlier than start_date when both provided)
-        const dateValidation = this.validateDateRange(
-            placementData.start_date,
-            placementData.end_date
-        );
-        if (!dateValidation.valid) {
-            return res.status(400).json({
-                success: false,
-                message: dateValidation.message
-            });
-        }
 
         try {
             // Get the current user's ID from the auth middleware
@@ -300,16 +262,6 @@ class PlacementController {
                 overtime_exemption: placementData.overtime_exemption ?? placementData.overtimeExemption,
                 internal_email_notification: placementData.internal_email_notification ?? placementData.internalEmailNotification,
             };
-
-            const startForValidation = normalizedData.start_date ?? existingPlacement.startDate ?? existingPlacement.start_date;
-            const endForValidation = normalizedData.end_date !== undefined ? normalizedData.end_date : (existingPlacement.endDate ?? existingPlacement.end_date ?? null);
-            const dateValidation = this.validateDateRange(startForValidation, endForValidation);
-            if (!dateValidation.valid) {
-                return res.status(400).json({
-                    success: false,
-                    message: dateValidation.message
-                });
-            }
 
             const updatedPlacement = await this.placementModel.update(id, normalizedData, userId);
 

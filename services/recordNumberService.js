@@ -79,10 +79,6 @@ function formatDisplayRecordNumber(moduleType, recordNumber) {
  * @param {object} client - pg client
  */
 async function runMigrationIfNeeded(client) {
-    const check = await client.query(
-        "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'reusable_numbers'"
-    );
-    if (check.rows.length > 0) return;
     const sqlPath = path.join(__dirname, '..', 'migrations', 'reusable_record_numbers.sql');
     const sql = fs.readFileSync(sqlPath, 'utf8');
     await client.query(sql);
