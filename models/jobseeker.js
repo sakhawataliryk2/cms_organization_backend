@@ -1,5 +1,5 @@
 const bcrypt = require('bcrypt');
-const { allocateRecordNumber, releaseRecordNumber } = require('../services/recordNumberService');
+const { allocateRecordNumber, releaseRecordNumber, runMigrationIfNeeded } = require('../services/recordNumberService');
 
 let jobSeekerTablesInitialized = false;
 
@@ -15,6 +15,9 @@ class JobSeeker {
         try {
             console.log('Initializing job seekers table if needed...');
             client = await this.pool.connect();
+
+            // Ensure reusable record-number system exists (idempotent)
+            await runMigrationIfNeeded(client);
 
             await client.query(`
                 CREATE TABLE IF NOT EXISTS job_seekers (
@@ -55,6 +58,29 @@ class JobSeeker {
             await client.query(`
                 ALTER TABLE job_seekers ADD COLUMN IF NOT EXISTS record_number INTEGER
             `);
+
+            // Backfill record_number for existing rows that predate allocation
+            await client.query(`
+                WITH ordered AS (
+                    SELECT
+                        id,
+                        ROW_NUMBER() OVER (ORDER BY id)
+                        + COALESCE((SELECT MAX(record_number) FROM job_seekers WHERE record_number IS NOT NULL), 0) AS rn
+                    FROM job_seekers
+                    WHERE record_number IS NULL
+                )
+                UPDATE job_seekers js
+                SET record_number = ordered.rn
+                FROM ordered
+                WHERE js.id = ordered.id
+            `);
+
+            // Enforce uniqueness + non-null going forward
+            await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_job_seekers_record_number ON job_seekers (record_number)`);
+            await client.query(`ALTER TABLE job_seekers ALTER COLUMN record_number SET NOT NULL`);
+
+            // Ensure sequence continues from current max
+            await client.query(`SELECT setval('job_seeker_record_number_seq', (SELECT COALESCE(MAX(record_number), 0) FROM job_seekers))`);
 
             // Also create a table for job seeker notes if it doesn't exist
             await client.query(`

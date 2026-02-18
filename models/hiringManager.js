@@ -1,5 +1,5 @@
 const bcrypt = require('bcrypt');
-const { allocateRecordNumber, releaseRecordNumber } = require('../services/recordNumberService');
+const { allocateRecordNumber, releaseRecordNumber, runMigrationIfNeeded } = require('../services/recordNumberService');
 
 class HiringManager {
     constructor(pool) {
@@ -36,6 +36,9 @@ class HiringManager {
         try {
             console.log('Initializing hiring_managers table if needed...');
             client = await this.pool.connect();
+
+            // Ensure reusable record-number system exists (idempotent)
+            await runMigrationIfNeeded(client);
 
             await client.query(`
                 CREATE TABLE IF NOT EXISTS hiring_managers (
@@ -161,6 +164,29 @@ class HiringManager {
             await client.query(`
                 ALTER TABLE hiring_managers ADD COLUMN IF NOT EXISTS record_number INTEGER
             `);
+
+            // Backfill record_number for existing rows that predate allocation
+            await client.query(`
+                WITH ordered AS (
+                    SELECT
+                        id,
+                        ROW_NUMBER() OVER (ORDER BY id)
+                        + COALESCE((SELECT MAX(record_number) FROM hiring_managers WHERE record_number IS NOT NULL), 0) AS rn
+                    FROM hiring_managers
+                    WHERE record_number IS NULL
+                )
+                UPDATE hiring_managers hm
+                SET record_number = ordered.rn
+                FROM ordered
+                WHERE hm.id = ordered.id
+            `);
+
+            // Enforce uniqueness + non-null going forward
+            await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_hiring_managers_record_number ON hiring_managers (record_number)`);
+            await client.query(`ALTER TABLE hiring_managers ALTER COLUMN record_number SET NOT NULL`);
+
+            // Ensure sequence continues from current max
+            await client.query(`SELECT setval('hiring_manager_record_number_seq', (SELECT COALESCE(MAX(record_number), 0) FROM hiring_managers))`);
 
             // Create a table for hiring manager notes
             await client.query(`
