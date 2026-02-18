@@ -82,6 +82,8 @@ const createTemplateDocumentsRouter = require("./routes/templateDocumentsRoutes"
 const createOrganizationDefaultDocumentRouter = require("./routes/organizationDefaultDocumentRoutes");
 const createScrapeRouter = require("./routes/scrapeRoutes");
 const createActivityRouter = require("./routes/activityRoutes");
+const AnalyticsController = require("./controllers/analyticsController");
+const createAnalyticsRouter = require("./routes/analyticsRoutes");
 
 const packetRoutes = require("./routes/packetRoutes");
 
@@ -284,6 +286,10 @@ const getAppointmentController = () => {
 
 const getActivityController = () => {
   return new ActivityController(getPool());
+};
+
+const getAnalyticsController = () => {
+  return new AnalyticsController(getPool());
 };
 
 
@@ -494,6 +500,12 @@ app.use(async (req, res, next) => {
         const activityController = getActivityController();
         await activityController.initTables();
       }
+
+      // Initialize analytics tables (sessions, page views, field changes)
+      if (req.path.startsWith("/api/analytics")) {
+        const analyticsController = getAnalyticsController();
+        await analyticsController.initTables();
+      }
     } catch (error) {
       console.error("Failed to initialize tables:", error.message);
       // Continue anyway - tables might already exist
@@ -518,6 +530,13 @@ app.use("/api/jobs/xml", sanitizeInputs, (req, res, next) => {
 app.use("/api/activity", sanitizeInputs, (req, res, next) => {
   const authMiddleware = { verifyToken: verifyToken(getPool()), checkRole };
   const router = createActivityRouter(getActivityController(), authMiddleware);
+  router(req, res, next);
+});
+
+// Analytics tracking endpoints
+app.use("/api/analytics", sanitizeInputs, (req, res, next) => {
+  const authMiddleware = { verifyToken: verifyToken(getPool()), checkRole };
+  const router = createAnalyticsRouter(getAnalyticsController(), authMiddleware);
   router(req, res, next);
 });
 
