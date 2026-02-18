@@ -79,6 +79,10 @@ class Organization {
                 END $$;
             `);
 
+            await client.query(`
+                ALTER TABLE organizations ADD COLUMN IF NOT EXISTS record_number INTEGER
+            `);
+
             // Also create a table for organization notes if it doesn't exist
             await client.query(`
                 CREATE TABLE IF NOT EXISTS organization_notes (

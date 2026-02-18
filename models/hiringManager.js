@@ -158,6 +158,10 @@ class HiringManager {
                 END $$;
             `);
 
+            await client.query(`
+                ALTER TABLE hiring_managers ADD COLUMN IF NOT EXISTS record_number INTEGER
+            `);
+
             // Create a table for hiring manager notes
             await client.query(`
                 CREATE TABLE IF NOT EXISTS hiring_manager_notes (

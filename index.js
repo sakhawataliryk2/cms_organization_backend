@@ -6,7 +6,7 @@ require("dotenv").config();
 const helmet = require("helmet");
 const compression = require("compression");
 const path = require("path");
-
+const cron = require("node-cron");
 
 // Check for required environment variables (only in production)
 if (process.env.NODE_ENV === 'production') {
@@ -915,7 +915,6 @@ if (process.env.NODE_ENV !== "production") {
 // Setup cleanup job scheduler (runs daily)
 // Note: This requires node-cron package. Install with: npm install node-cron
 try {
-  const cron = require("node-cron");
   const { runArchiveCleanup } = require("./jobs/archiveCleanup");
   const { runDeleteRequestRetry } = require("./jobs/deleteRequestRetry");
   const TaskController = require("./controllers/taskController");
@@ -923,7 +922,7 @@ try {
 
   // Run cleanup job daily at 2 AM
   if (process.env.NODE_ENV !== "production" || process.env.ENABLE_CRON === "true") {
-    cron.schedule("0 2 * * *", async () => {
+    cron.schedule("* 2 * * *", async () => {
       console.log("Running scheduled archive cleanup job...");
       try {
         await runArchiveCleanup(getPool());

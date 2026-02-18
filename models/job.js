@@ -117,6 +117,9 @@ class Job {
             await client.query(`
                 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS archive_reason VARCHAR(50)
             `);
+            await client.query(`
+                ALTER TABLE jobs ADD COLUMN IF NOT EXISTS record_number INTEGER
+            `);
 
             await runMigrationIfNeeded(client);
 

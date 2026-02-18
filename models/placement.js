@@ -75,6 +75,9 @@ class Placement {
             await client.query(`
                 ALTER TABLE placements ADD COLUMN IF NOT EXISTS archive_reason VARCHAR(50)
             `);
+            await client.query(`
+                ALTER TABLE placements ADD COLUMN IF NOT EXISTS record_number INTEGER
+            `);
 
             // Create indexes for better query performance
             await client.query(`

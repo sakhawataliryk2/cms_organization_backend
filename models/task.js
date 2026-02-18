@@ -86,6 +86,9 @@ class Task {
             await client.query(`
                 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS archive_reason VARCHAR(50)
             `);
+            await client.query(`
+                ALTER TABLE tasks ADD COLUMN IF NOT EXISTS record_number INTEGER
+            `);
 
             // Ensure job_seeker_id uses ON DELETE CASCADE for existing installations
             await client.query(`

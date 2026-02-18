@@ -52,6 +52,9 @@ class JobSeeker {
             await client.query(`
                 ALTER TABLE job_seekers ADD COLUMN IF NOT EXISTS archive_reason VARCHAR(50)
             `);
+            await client.query(`
+                ALTER TABLE job_seekers ADD COLUMN IF NOT EXISTS record_number INTEGER
+            `);
 
             // Also create a table for job seeker notes if it doesn't exist
             await client.query(`

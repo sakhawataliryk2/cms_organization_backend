@@ -139,6 +139,9 @@ class Lead {
             await client.query(`
                 ALTER TABLE leads ADD COLUMN IF NOT EXISTS archive_reason VARCHAR(50)
             `);
+            await client.query(`
+                ALTER TABLE leads ADD COLUMN IF NOT EXISTS record_number INTEGER
+            `);
 
             // Create a table for lead notes
             await client.query(`

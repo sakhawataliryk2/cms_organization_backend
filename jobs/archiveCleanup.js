@@ -37,7 +37,6 @@ async function runArchiveCleanup(pool) {
         "DELETE FROM hiring_managers WHERE organization_id = $1",
         [org.id]
       );
-      // Release job record_numbers before hard delete so they can be reused
       const orgJobs = await client.query(
         "SELECT id, record_number FROM jobs WHERE organization_id = $1",
         [org.id]
@@ -58,7 +57,7 @@ async function runArchiveCleanup(pool) {
         [org.id]
       );
       await client.query(
-        "DELETE FROM organization_documents WHERE organization_id = $1",
+        "DELETE FROM documents WHERE entity_type = 'organization' AND entity_id = $1",
         [org.id]
       );
       if (org.record_number != null) {
