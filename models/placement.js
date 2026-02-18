@@ -897,6 +897,7 @@ class Placement {
 
         return {
             id: row.id,
+            record_number: row.record_number,
             jobId: row.job_id,
             jobSeekerId: row.job_seeker_id,
             organizationId: row.organization_id,
