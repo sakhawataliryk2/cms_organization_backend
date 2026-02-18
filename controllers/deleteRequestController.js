@@ -267,12 +267,25 @@ class DeleteRequestController {
     const retryCount = deleteRequest.retry_count ?? options.retryCount ?? 0;
     const isEscalation = options.isEscalation ?? (ESCALATION_ENABLED && ESCALATION_EMAIL && retryCount >= ESCALATION_AFTER_RETRIES);
     const escalationPrefix = isEscalation ? "[ESCALATED] " : "";
+
+    let organizationNameLink = recordDisplay;
+    if (deleteRequest.record_type === "organization") {
+      try {
+        const org = await this.organizationModel.getById(deleteRequest.record_id);
+        const orgName = org?.name || recordDisplay;
+        const recordUrl = `${baseUrl}/dashboard/organizations/view?id=${deleteRequest.record_id}`;
+        organizationNameLink = `<a href="${recordUrl}" style="color:#2563eb;text-decoration:underline;">${orgName}</a>`;
+      } catch (err) {
+        console.error("Error fetching organization for email:", err);
+      }
+    }
     
     const vars = {
       requestedBy: requester.name || "Unknown",
       requestedByEmail: requester.email || "",
       recordType: deleteRequest.record_type,
       recordNumber: recordDisplay,
+      organizationNameLink,
       requestId: String(deleteRequest.id),
       reason: deleteRequest.reason || "",
       requestDate,
@@ -287,7 +300,7 @@ class DeleteRequestController {
       approvalUrl: approvalButtonHtml,
       denyUrl: denyButtonHtml,
     };
-    const safeKeys = ["approvalUrl", "denyUrl"];
+    const safeKeys = ["approvalUrl", "denyUrl", "organizationNameLink"];
 
     const recipients = isEscalation && ESCALATION_EMAIL
       ? [PAYROLL_EMAIL, ESCALATION_EMAIL].filter(Boolean).join(", ")
