@@ -142,6 +142,11 @@ class TransferController {
       client.release();
     }
 
+    const sourceOrgUrl = `${baseUrl}/dashboard/organizations/view?id=${transfer.source_organization_id}`;
+    const targetOrgUrl = `${baseUrl}/dashboard/organizations/view?id=${transfer.target_organization_id}`;
+    const sourceOrganizationNameLink = `<a href="${sourceOrgUrl}" style="color:#2563eb;text-decoration:underline;">${sourceOrgName || transfer.source_record_number}</a>`;
+    const targetOrganizationNameLink = `<a href="${targetOrgUrl}" style="color:#2563eb;text-decoration:underline;">${targetOrgName || transfer.target_record_number}</a>`;
+
     const vars = {
       requestedBy: requester.name || "Unknown",
       requestedByEmail: requester.email || "",
@@ -151,6 +156,8 @@ class TransferController {
       duplicateRecordNumber: transfer.source_record_number || "",
       sourceRecordNumber: transfer.source_record_number || "",
       targetRecordNumber: transfer.target_record_number || "",
+      sourceOrganizationNameLink,
+      targetOrganizationNameLink,
       requestDate,
       approvalUrl,
       denyUrl,
@@ -160,7 +167,7 @@ class TransferController {
       approvalUrl: approvalButtonHtml,
       denyUrl: denyButtonHtml,
     };
-    const safeKeys = ["approvalUrl", "denyUrl"];
+    const safeKeys = ["approvalUrl", "denyUrl", "sourceOrganizationNameLink", "targetOrganizationNameLink"];
 
     if (tpl) {
       const subject = renderTemplate(tpl.subject, vars, safeKeys);
