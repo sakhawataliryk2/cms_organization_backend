@@ -1,10 +1,12 @@
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const { sendMail } = require("../services/emailService");
+const JobseekerPortalAccount = require("../models/jobseekerPortalAccount");
 
 class JobseekerPortalAuthController {
   constructor(pool) {
     this.pool = pool;
+    this.accountModel = new JobseekerPortalAccount(pool);
 
     this.initTables = this.initTables.bind(this);
     this.portalAuth = this.portalAuth.bind(this);
@@ -13,6 +15,7 @@ class JobseekerPortalAuthController {
     this.me = this.me.bind(this);
     this.logout = this.logout.bind(this);
     this.forgotPassword = this.forgotPassword.bind(this);
+    this.adminSetPassword = this.adminSetPassword.bind(this);
   }
 
   async initTables() {
@@ -208,6 +211,53 @@ class JobseekerPortalAuthController {
       });
     } finally {
       client.release();
+    }
+  }
+
+  // POST /admin-set-password (CMS admin only: set job seeker portal password)
+  async adminSetPassword(req, res) {
+    const { email, temporaryPassword, jobSeekerId } = req.body;
+
+    if (!temporaryPassword || (!email && !jobSeekerId)) {
+      return res.status(400).json({
+        success: false,
+        message: "temporaryPassword and (email or jobSeekerId) are required",
+      });
+    }
+
+    const jsId = jobSeekerId != null ? Number(jobSeekerId) : null;
+    if (jsId == null || Number.isNaN(jsId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Valid jobSeekerId is required",
+      });
+    }
+
+    try {
+      const updated = await this.accountModel.setPassword({
+        job_seeker_id: jsId,
+        newPassword: String(temporaryPassword),
+        must_reset_password: true,
+      });
+
+      if (!updated) {
+        return res.status(404).json({
+          success: false,
+          message:
+            "No job seeker portal account found for this job seeker. Create the portal account first (e.g. via onboarding).",
+        });
+      }
+
+      return res.json({
+        success: true,
+        message: "Temporary password has been set.",
+      });
+    } catch (err) {
+      console.error("adminSetPassword error:", err);
+      return res.status(500).json({
+        success: false,
+        message: err.message || "Failed to set password",
+      });
     }
   }
 }

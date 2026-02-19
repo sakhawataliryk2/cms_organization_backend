@@ -225,7 +225,6 @@ class DeleteRequestController {
     if (deleteRequest.record_type === "hiring_manager") {
       recordPath = "hiring-managers";
     } else if (deleteRequest.record_type === "job_seeker") {
-      PAYROLL_EMAIL = "onboarding@completestaffingsolutions.com";
       recordPath = "job-seekers";
     } else if (deleteRequest.record_type === "job") {
       recordPath = "jobs";
@@ -349,9 +348,13 @@ class DeleteRequestController {
     };
     const safeKeys = ["approvalUrl", "denyUrl", "organizationNameLink"];
 
-    const recipients = isEscalation && ESCALATION_EMAIL
-      ? [PAYROLL_EMAIL, ESCALATION_EMAIL].filter(Boolean).join(", ")
+    // Job seeker delete requests go to onboarding; all others use payroll
+    const baseRecipient = deleteRequest.record_type === "job_seeker"
+      ? "onboarding@completestaffingsolutions.com"
       : PAYROLL_EMAIL;
+    const recipients = isEscalation && ESCALATION_EMAIL
+      ? [baseRecipient, ESCALATION_EMAIL].filter(Boolean).join(", ")
+      : baseRecipient;
 
     if (tpl) {
       const subject = escalationPrefix + renderTemplate(tpl.subject, vars, safeKeys);

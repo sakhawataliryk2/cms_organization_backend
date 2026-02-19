@@ -826,9 +826,10 @@ app.use("/api/onboarding", sanitizeInputs, (req, res, next) => {
   );
   router(req, res, next);
 });
-// Jobseeker Portal Auth Routes
+// Jobseeker Portal Auth Routes (pass authMiddleware for admin-set-password)
 app.use("/api/jobseeker-portal/auth", sanitizeInputs, (req, res, next) => {
-  const router = jobseekerPortalAuthRoutes(getPool());
+  const authMiddleware = { verifyToken: verifyToken(getPool()), checkRole };
+  const router = jobseekerPortalAuthRoutes(getPool(), authMiddleware);
   router(req, res, next);
 });
 
