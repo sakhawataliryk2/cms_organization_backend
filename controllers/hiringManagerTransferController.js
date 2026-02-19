@@ -1,6 +1,7 @@
 // controllers/hiringManagerTransferController.js
 const HiringManagerTransfer = require("../models/hiringManagerTransfer");
 const HiringManager = require("../models/hiringManager");
+const Organization = require("../models/organization");
 const EmailTemplateModel = require("../models/emailTemplateModel");
 const { renderTemplate } = require("../utils/templateRenderer");
 const { sendMail } = require("../services/emailService");
@@ -13,6 +14,7 @@ class HiringManagerTransferController {
     this.pool = pool;
     this.transferModel = new HiringManagerTransfer(pool);
     this.hiringManagerModel = new HiringManager(pool);
+    this.organizationModel = new Organization(pool);
     this.emailTemplateModel = new EmailTemplateModel(pool);
     this.create = this.create.bind(this);
     this.getById = this.getById.bind(this);
@@ -118,10 +120,28 @@ class HiringManagerTransferController {
     const client = await this.pool.connect();
     let sourceName = "";
     let targetName = "";
+    let sourceOrganizationNameLink = transfer.source_record_number || "";
+    let targetOrganizationNameLink = transfer.target_record_number || "";
     try {
       const fullTransfer = await this.transferModel.getById(transfer.id);
       sourceName = fullTransfer?.source_hm_name || transfer.source_record_number || "";
       targetName = fullTransfer?.target_hm_name || transfer.target_record_number || "";
+      const srcOrgId = fullTransfer?.source_organization_id;
+      const tgtOrgId = fullTransfer?.target_organization_id;
+      if (srcOrgId) {
+        try {
+          const org = await this.organizationModel.getById(srcOrgId);
+          const name = org?.name || transfer.source_record_number || "";
+          sourceOrganizationNameLink = `<a href="${baseUrl}/dashboard/organizations/view?id=${srcOrgId}" style="color:#2563eb;text-decoration:underline;">${name}</a>`;
+        } catch (_) {}
+      }
+      if (tgtOrgId) {
+        try {
+          const org = await this.organizationModel.getById(tgtOrgId);
+          const name = org?.name || transfer.target_record_number || "";
+          targetOrganizationNameLink = `<a href="${baseUrl}/dashboard/organizations/view?id=${tgtOrgId}" style="color:#2563eb;text-decoration:underline;">${name}</a>`;
+        } catch (_) {}
+      }
     } finally {
       client.release();
     }
@@ -131,6 +151,8 @@ class HiringManagerTransferController {
       requestedByEmail: requester.email || "",
       sourceRecordNumber: transfer.source_record_number || "",
       targetRecordNumber: transfer.target_record_number || "",
+      sourceOrganizationNameLink,
+      targetOrganizationNameLink,
       requestDate,
       approvalUrl,
       denyUrl,
@@ -140,7 +162,7 @@ class HiringManagerTransferController {
       approvalUrl: approvalButtonHtml,
       denyUrl: denyButtonHtml,
     };
-    const safeKeys = ["approvalUrl", "denyUrl"];
+    const safeKeys = ["approvalUrl", "denyUrl", "sourceOrganizationNameLink", "targetOrganizationNameLink"];
 
     if (tpl) {
       const subject = renderTemplate(tpl.subject, vars, safeKeys);

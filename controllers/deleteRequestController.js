@@ -269,17 +269,64 @@ class DeleteRequestController {
     const escalationPrefix = isEscalation ? "[ESCALATED] " : "";
 
     let organizationNameLink = recordDisplay;
-    if (deleteRequest.record_type === "organization") {
-      try {
+    const buildOrgLink = (orgId, orgName, fallback) => {
+      if (!orgId) return fallback || recordDisplay;
+      const name = orgName || fallback || recordDisplay;
+      const recordUrl = `${baseUrl}/dashboard/organizations/view?id=${orgId}`;
+      return `<a href="${recordUrl}" style="color:#2563eb;text-decoration:underline;">${name}</a>`;
+    };
+    try {
+      if (deleteRequest.record_type === "organization") {
         const org = await this.organizationModel.getById(deleteRequest.record_id);
-        const orgName = org?.name || recordDisplay;
-        const recordUrl = `${baseUrl}/dashboard/organizations/view?id=${deleteRequest.record_id}`;
-        organizationNameLink = `<a href="${recordUrl}" style="color:#2563eb;text-decoration:underline;">${orgName}</a>`;
-      } catch (err) {
-        console.error("Error fetching organization for email:", err);
+        organizationNameLink = buildOrgLink(deleteRequest.record_id, org?.name, recordDisplay);
+      } else if (deleteRequest.record_type === "hiring_manager") {
+        const hm = await this.hiringManagerModel.getById(deleteRequest.record_id);
+        const orgId = hm?.organization_id;
+        if (orgId) {
+          const org = await this.organizationModel.getById(orgId);
+          organizationNameLink = buildOrgLink(orgId, org?.name, recordDisplay);
+        }
+      } else if (deleteRequest.record_type === "job") {
+        const job = await this.jobModel.getById(deleteRequest.record_id);
+        const orgId = job?.organization_id;
+        if (orgId) {
+          const org = await this.organizationModel.getById(orgId);
+          organizationNameLink = buildOrgLink(orgId, org?.name, recordDisplay);
+        }
+      } else if (deleteRequest.record_type === "lead") {
+        const lead = await this.leadModel.getById(deleteRequest.record_id);
+        const orgId = lead?.organization_id;
+        if (orgId) {
+          const org = await this.organizationModel.getById(orgId);
+          organizationNameLink = buildOrgLink(orgId, org?.name, recordDisplay);
+        }
+      } else if (deleteRequest.record_type === "task") {
+        const task = await this.taskModel.getById(deleteRequest.record_id);
+        const orgId = task?.organization_id;
+        if (orgId) {
+          const org = await this.organizationModel.getById(orgId);
+          organizationNameLink = buildOrgLink(orgId, org?.name, recordDisplay);
+        }
+      } else if (deleteRequest.record_type === "placement") {
+        const placement = await this.placementModel.findById(deleteRequest.record_id);
+        const orgId = placement?.organizationId ?? placement?.organization_id;
+        if (orgId) {
+          const org = await this.organizationModel.getById(orgId);
+          organizationNameLink = buildOrgLink(orgId, org?.name, recordDisplay);
+        }
+      } else if (deleteRequest.record_type === "job_seeker") {
+        const placements = await this.placementModel.findByJobSeekerId(deleteRequest.record_id);
+        const first = placements?.[0];
+        const orgId = first?.organizationId ?? first?.organization_id;
+        if (orgId) {
+          const org = await this.organizationModel.getById(orgId);
+          organizationNameLink = buildOrgLink(orgId, org?.name, recordDisplay);
+        }
       }
+    } catch (err) {
+      console.error("Error fetching organization for email:", err);
     }
-    
+
     const vars = {
       requestedBy: requester.name || "Unknown",
       requestedByEmail: requester.email || "",
@@ -1448,12 +1495,73 @@ class DeleteRequestController {
           ? "onboarding@completestaffingsolutions.com"
           : process.env.PAYROLL_EMAIL || "Payroll@completestaffingsolutions.com";
 
-      const requestDate = new Date().toLocaleString();
+      const baseUrl = process.env.FRONTEND_URL || BASE_URL;
+      let organizationNameLink = recordDisplay;
+      const buildOrgLink = (orgId, orgName, fallback) => {
+        if (!orgId) return fallback || recordDisplay;
+        const name = orgName || fallback || recordDisplay;
+        const recordUrl = `${baseUrl}/dashboard/organizations/view?id=${orgId}`;
+        return `<a href="${recordUrl}" style="color:#2563eb;text-decoration:underline;">${name}</a>`;
+      };
+      try {
+        const recordId = parseInt(id, 10);
+        if (recordType === "organization") {
+          const org = await this.organizationModel.getById(recordId);
+          organizationNameLink = buildOrgLink(recordId, org?.name, recordDisplay);
+        } else if (recordType === "hiring_manager") {
+          const hm = await this.hiringManagerModel.getById(recordId);
+          const orgId = hm?.organization_id;
+          if (orgId) {
+            const org = await this.organizationModel.getById(orgId);
+            organizationNameLink = buildOrgLink(orgId, org?.name, recordDisplay);
+          }
+        } else if (recordType === "job") {
+          const job = await this.jobModel.getById(recordId);
+          const orgId = job?.organization_id;
+          if (orgId) {
+            const org = await this.organizationModel.getById(orgId);
+            organizationNameLink = buildOrgLink(orgId, org?.name, recordDisplay);
+          }
+        } else if (recordType === "lead") {
+          const lead = await this.leadModel.getById(recordId);
+          const orgId = lead?.organization_id;
+          if (orgId) {
+            const org = await this.organizationModel.getById(orgId);
+            organizationNameLink = buildOrgLink(orgId, org?.name, recordDisplay);
+          }
+        } else if (recordType === "task") {
+          const task = await this.taskModel.getById(recordId);
+          const orgId = task?.organization_id;
+          if (orgId) {
+            const org = await this.organizationModel.getById(orgId);
+            organizationNameLink = buildOrgLink(orgId, org?.name, recordDisplay);
+          }
+        } else if (recordType === "placement") {
+          const placement = await this.placementModel.findById(recordId);
+          const orgId = placement?.organizationId ?? placement?.organization_id;
+          if (orgId) {
+            const org = await this.organizationModel.getById(orgId);
+            organizationNameLink = buildOrgLink(orgId, org?.name, recordDisplay);
+          }
+        } else if (recordType === "job_seeker") {
+          const placements = await this.placementModel.findByJobSeekerId(recordId);
+          const first = placements?.[0];
+          const orgId = first?.organizationId ?? first?.organization_id;
+          if (orgId) {
+            const org = await this.organizationModel.getById(orgId);
+            organizationNameLink = buildOrgLink(orgId, org?.name, recordDisplay);
+          }
+        }
+      } catch (err) {
+        console.error("Error fetching organization for unarchive email:", err);
+      }
+
       const vars = {
         requestedBy,
         requestedByEmail,
         recordType,
         recordNumber: recordDisplay,
+        organizationNameLink,
         reason: String(reason).trim(),
         requestDate,
         approvalUrl,
@@ -1461,9 +1569,10 @@ class DeleteRequestController {
       };
 
       const tpl = await this.emailTemplateModel.getTemplateByType(templateType);
+      const unarchiveSafeKeys = ["approvalUrl", "denyUrl", "organizationNameLink"];
       if (tpl) {
-        const subject = renderTemplate(tpl.subject, vars, []);
-        let html = renderTemplate(tpl.body, vars, []);
+        const subject = renderTemplate(tpl.subject, vars, unarchiveSafeKeys);
+        let html = renderTemplate(tpl.body, vars, unarchiveSafeKeys);
         html = html.replace(/\r\n/g, "\n").replace(/\n/g, "<br/>");
         await sendMail({ to: toEmail, subject, html });
       } else {
