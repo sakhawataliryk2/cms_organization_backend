@@ -14,7 +14,7 @@
     { "src": "/test-db", "dest": "/index.js" },
     { "src": "/(.*)", "dest": "/index.js" }
   ],
-  "cron": [
+  "crons": [
     { "path": "/api/cron/archive-cleanup", "schedule": "0 2 * * *" },
     { "path": "/api/cron/task-reminders", "schedule": "*/5 * * * *" },
     { "path": "/api/cron/delete-retry", "schedule": "0 * * * *" }
