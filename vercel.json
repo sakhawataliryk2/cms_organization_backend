@@ -15,7 +15,7 @@
     { "src": "/(.*)", "dest": "/index.js" }
   ],
   "crons": [
-    { "path": "/api/cron/archive-cleanup", "schedule": "0 2 * * *" }
+    { "path": "/api/cron/archive-cleanup", "schedule": "30 22 * * *"}
   ],
   "env": { "NODE_ENV": "production" }
 }
