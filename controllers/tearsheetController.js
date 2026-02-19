@@ -124,11 +124,11 @@ class TearsheetController {
         });
       }
 
-      const validTypes = ['job_seekers', 'hiring_managers', 'jobs', 'leads', 'tasks'];
+      const validTypes = ['job_seekers', 'hiring_managers', 'jobs', 'leads', 'tasks', 'placements'];
       if (!validTypes.includes(type)) {
         return res.status(400).json({
           success: false,
-          message: "Invalid type. Must be one of: job_seekers, hiring_managers, jobs, leads, tasks",
+          message: "Invalid type. Must be one of: job_seekers, hiring_managers, jobs, leads, tasks, placements",
         });
       }
 
@@ -365,7 +365,7 @@ class TearsheetController {
   async associate(req, res) {
     try {
       const { id } = req.params;
-      const { job_seeker_id, hiring_manager_id, job_id, lead_id, organization_id, task_id } = req.body;
+      const { job_seeker_id, hiring_manager_id, job_id, lead_id, organization_id, task_id, placement_id } = req.body;
 
       console.log('Associating record with tearsheet:', { id, job_seeker_id, hiring_manager_id, job_id, lead_id, organization_id });
 
@@ -383,6 +383,7 @@ class TearsheetController {
         lead_id: lead_id ? parseInt(lead_id) : null,
         organization_id: organization_id ? parseInt(organization_id) : null,
         task_id: task_id ? parseInt(task_id) : null,
+        placement_id: placement_id ? parseInt(placement_id) : null,
       });
 
       return res.json({

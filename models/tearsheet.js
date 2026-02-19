@@ -80,6 +80,15 @@ class Tearsheet {
         )
       `);
 
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS tearsheet_placements (
+          tearsheet_id INTEGER REFERENCES tearsheets(id) ON DELETE CASCADE,
+          placement_id INTEGER REFERENCES placements(id) ON DELETE CASCADE,
+          added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (tearsheet_id, placement_id)
+        )
+      `);
+
       // Migrate existing data from single FKs to junction tables
       await client.query(`
         INSERT INTO tearsheet_job_seekers (tearsheet_id, job_seeker_id)
@@ -191,7 +200,9 @@ class Tearsheet {
           ) sub) AS organization_count,
           (SELECT COUNT(*) FROM placements p
            WHERE EXISTS (SELECT 1 FROM tearsheet_job_seekers tjs WHERE tjs.tearsheet_id = t.id AND tjs.job_seeker_id = p.job_seeker_id)
-              OR EXISTS (SELECT 1 FROM tearsheet_jobs tj WHERE tj.tearsheet_id = t.id AND tj.job_id = p.job_id)) AS placement_count
+              OR EXISTS (SELECT 1 FROM tearsheet_jobs tj WHERE tj.tearsheet_id = t.id AND tj.job_id = p.job_id)
+              OR EXISTS (SELECT 1 FROM tearsheet_placements tp WHERE tp.tearsheet_id = t.id AND tp.placement_id = p.id)
+          ) AS placement_count
         FROM tearsheets t
         LEFT JOIN users u ON t.created_by = u.id
         LEFT JOIN tearsheet_job_seekers tjs ON t.id = tjs.tearsheet_id
@@ -242,7 +253,9 @@ class Tearsheet {
           ) sub) AS organization_count,
           (SELECT COUNT(*) FROM placements p
            WHERE EXISTS (SELECT 1 FROM tearsheet_job_seekers tjs WHERE tjs.tearsheet_id = t.id AND tjs.job_seeker_id = p.job_seeker_id)
-              OR EXISTS (SELECT 1 FROM tearsheet_jobs tj WHERE tj.tearsheet_id = t.id AND tj.job_id = p.job_id)) AS placement_count
+              OR EXISTS (SELECT 1 FROM tearsheet_jobs tj WHERE tj.tearsheet_id = t.id AND tj.job_id = p.job_id)
+              OR EXISTS (SELECT 1 FROM tearsheet_placements tp WHERE tp.tearsheet_id = t.id AND tp.placement_id = p.id)
+          ) AS placement_count
         FROM tearsheets t
         LEFT JOIN users u ON t.created_by = u.id
         LEFT JOIN tearsheet_job_seekers tjs ON t.id = tjs.tearsheet_id
@@ -267,7 +280,7 @@ class Tearsheet {
       switch (type) {
         case 'job_seekers':
           query = `
-            SELECT js.id, CONCAT_WS(' ', js.first_name, js.last_name) as name, js.email
+            SELECT js.id, js.record_number, CONCAT_WS(' ', js.first_name, js.last_name) as name, js.email
             FROM tearsheet_job_seekers tjs
             JOIN job_seekers js ON tjs.job_seeker_id = js.id
             WHERE tjs.tearsheet_id = $1
@@ -276,7 +289,7 @@ class Tearsheet {
           break;
         case 'hiring_managers':
           query = `
-            SELECT hm.id, CONCAT_WS(' ', hm.first_name, hm.last_name) as name, hm.email, o.name as organization
+            SELECT hm.id, hm.record_number, CONCAT_WS(' ', hm.first_name, hm.last_name) as name, hm.email, o.name as organization
             FROM tearsheet_hiring_managers thm
             JOIN hiring_managers hm ON thm.hiring_manager_id = hm.id
             LEFT JOIN organizations o ON hm.organization_id = o.id
@@ -286,7 +299,7 @@ class Tearsheet {
           break;
         case 'jobs':
           query = `
-            SELECT j.id, j.job_title as name, o.name as company
+            SELECT j.id, j.record_number, j.job_title as name, o.name as company
             FROM tearsheet_jobs tj
             JOIN jobs j ON tj.job_id = j.id
             LEFT JOIN organizations o ON j.organization_id = o.id
@@ -296,7 +309,7 @@ class Tearsheet {
           break;
         case 'leads':
           query = `
-            SELECT l.id, CONCAT_WS(' ', l.first_name, l.last_name) as name, l.email
+            SELECT l.id, l.record_number, CONCAT_WS(' ', l.first_name, l.last_name) as name, l.email
             FROM tearsheet_leads tl
             JOIN leads l ON tl.lead_id = l.id
             WHERE tl.tearsheet_id = $1
@@ -305,11 +318,20 @@ class Tearsheet {
           break;
         case 'tasks':
           query = `
-            SELECT t.id, t.title as name, t.status, t.priority, t.due_date, t.owner, t.assigned_to
+            SELECT t.id, t.record_number, t.title as name, t.status, t.priority, t.due_date, t.owner, t.assigned_to
             FROM tearsheet_tasks tt
             JOIN tasks t ON tt.task_id = t.id
             WHERE tt.tearsheet_id = $1
             ORDER BY t.due_date DESC NULLS LAST, t.created_at DESC
+          `;
+          break;
+        case 'placements':
+          query = `
+            SELECT p.id, p.record_number, p.job_id, p.job_seeker_id, p.status, p.start_date, p.end_date
+            FROM tearsheet_placements tp
+            JOIN placements p ON tp.placement_id = p.id
+            WHERE tp.tearsheet_id = $1
+            ORDER BY p.start_date DESC, p.id
           `;
           break;
         default:
@@ -328,7 +350,7 @@ class Tearsheet {
     try {
       const result = await client.query(
         `
-        SELECT DISTINCT o.id, o.name
+        SELECT DISTINCT o.id, o.name, o.record_number
         FROM (
           SELECT organization_id AS org_id
           FROM tearsheet_organizations
@@ -468,7 +490,7 @@ class Tearsheet {
     try {
       const result = await client.query(
         `
-        SELECT DISTINCT p.id, p.job_id, p.job_seeker_id, p.status, p.start_date,
+        SELECT DISTINCT p.id, p.record_number, p.job_id, p.job_seeker_id, p.status, p.start_date,
           js.first_name AS js_first_name, js.last_name AS js_last_name, js.email AS js_email,
           j.job_title, o.name AS organization_name
         FROM placements p
@@ -502,7 +524,7 @@ class Tearsheet {
   }
 
   async associate(tearsheetId, data) {
-    const { job_seeker_id, hiring_manager_id, job_id, lead_id, organization_id, task_id } = data;
+    const { job_seeker_id, hiring_manager_id, job_id, lead_id, organization_id, task_id, placement_id } = data;
     const client = await this.pool.connect();
     try {
       console.log(`Starting association for tearsheet ${tearsheetId}`, data);
@@ -552,6 +574,14 @@ class Tearsheet {
         await client.query(
           `INSERT INTO tearsheet_tasks (tearsheet_id, task_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
           [tearsheetId, task_id]
+        );
+      }
+
+      if (placement_id) {
+        console.log(`Adding placement ${placement_id} to tearsheet ${tearsheetId}`);
+        await client.query(
+          `INSERT INTO tearsheet_placements (tearsheet_id, placement_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+          [tearsheetId, placement_id]
         );
       }
 
