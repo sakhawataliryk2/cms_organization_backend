@@ -32,7 +32,6 @@
     "jsonwebtoken": "^9.0.2",
     "mongodb": "6.5",
     "multer": "^2.0.2",
-    "node-cron": "^4.2.1",
     "nodemailer": "^6.9.14",
     "pg": "^8.14.1",
     "uuid": "^8.3.2",

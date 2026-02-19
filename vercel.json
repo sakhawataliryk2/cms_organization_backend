@@ -1,26 +1,23 @@
 {
-    "version": 2,
-    "builds": [
-        {
-            "src": "index.js",
-            "use": "@vercel/node"
-        }
-    ],
-    "routes": [
-        {
-            "src": "/api/(.*)",
-            "dest": "/index.js"
-        },
-        {
-            "src": "/test-db",
-            "dest": "/index.js"
-        },
-        {
-            "src": "/(.*)",
-            "dest": "/index.js"
-        }
-    ],
-    "env": {
-        "NODE_ENV": "production"
-    }
+  "version": 2,
+  "builds": [
+    { "src": "api/cron/archive-cleanup.js", "use": "@vercel/node" },
+    { "src": "api/cron/task-reminders.js", "use": "@vercel/node" },
+    { "src": "api/cron/delete-retry.js", "use": "@vercel/node" },
+    { "src": "index.js", "use": "@vercel/node" }
+  ],
+  "routes": [
+    { "src": "/api/cron/archive-cleanup", "dest": "/api/cron/archive-cleanup" },
+    { "src": "/api/cron/task-reminders", "dest": "/api/cron/task-reminders" },
+    { "src": "/api/cron/delete-retry", "dest": "/api/cron/delete-retry" },
+    { "src": "/api/(.*)", "dest": "/index.js" },
+    { "src": "/test-db", "dest": "/index.js" },
+    { "src": "/(.*)", "dest": "/index.js" }
+  ],
+  "cron": [
+    { "path": "/api/cron/archive-cleanup", "schedule": "0 2 * * *" },
+    { "path": "/api/cron/task-reminders", "schedule": "*/5 * * * *" },
+    { "path": "/api/cron/delete-retry", "schedule": "0 * * * *" }
+  ],
+  "env": { "NODE_ENV": "production" }
 }

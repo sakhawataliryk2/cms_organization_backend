@@ -6,7 +6,6 @@ require("dotenv").config();
 const helmet = require("helmet");
 const compression = require("compression");
 const path = require("path");
-const cron = require("node-cron");
 
 // Check for required environment variables (only in production)
 if (process.env.NODE_ENV === 'production') {
@@ -23,6 +22,7 @@ if (process.env.NODE_ENV === 'production') {
 
 // Import custom modules
 const { createPool, testDatabaseConnection } = require("./config/database");
+const { getPool } = require("./config/getPool");
 const AuthController = require("./controllers/authController");
 const OrganizationController = require("./controllers/organizationController");
 const JobController = require("./controllers/jobController");
@@ -174,15 +174,6 @@ app.use((req, res, next) => {
   });
   next();
 });
-
-// Create database pool - lazy initialization for serverless
-let pool;
-const getPool = () => {
-  if (!pool) {
-    pool = createPool();
-  }
-  return pool;
-};
 
 // Initialize controllers with lazy DB connection
 const getAuthController = () => {
@@ -919,6 +910,17 @@ app.get("/api/appointments/init", async (req, res) => {
 //   }
 // });
 
+// Cron API routes (same handlers as Vercel serverless; for local testing and if Express handles /api/cron)
+const archiveCleanupCron = require("./api/cron/archive-cleanup");
+const taskRemindersCron = require("./api/cron/task-reminders");
+const deleteRetryCron = require("./api/cron/delete-retry");
+app.get("/api/cron/archive-cleanup", archiveCleanupCron);
+app.post("/api/cron/archive-cleanup", archiveCleanupCron);
+app.get("/api/cron/task-reminders", taskRemindersCron);
+app.post("/api/cron/task-reminders", taskRemindersCron);
+app.get("/api/cron/delete-retry", deleteRetryCron);
+app.post("/api/cron/delete-retry", deleteRetryCron);
+
 // Add 404 middleware
 app.use(notFound);
 
@@ -930,64 +932,6 @@ if (process.env.NODE_ENV !== "production") {
   app.listen(port, () => {
     console.log(`Server running on port ${port}`);
   });
-}
-
-// Setup cleanup job scheduler (runs daily)
-// Note: This requires node-cron package. Install with: npm install node-cron
-try {
-  const { runArchiveCleanup } = require("./jobs/archiveCleanup");
-  const { runDeleteRequestRetry } = require("./jobs/deleteRequestRetry");
-  const TaskController = require("./controllers/taskController");
-  const taskController = new TaskController(getPool());
-
-  // Run cleanup job daily at 2 AM
-  if (process.env.NODE_ENV !== "production" || process.env.ENABLE_CRON === "true") {
-    cron.schedule("* 2 * * *", async () => {
-      console.log("Running scheduled archive cleanup job...");
-      try {
-        await runArchiveCleanup(getPool());
-      } catch (error) {
-        console.error("Error running archive cleanup job:", error);
-      }
-    });
-    console.log("Archive cleanup scheduler initialized (runs daily at 2 AM)");
-
-    // Run task reminders every 5 minutes for better precision
-    // This ensures reminders are sent within 5 minutes of the target time
-    cron.schedule("*/5 * * * *", async () => {
-      console.log("Running scheduled task reminder check...");
-      try {
-        // Create a mock request/response object for the controller method
-        const mockReq = { user: { id: 1, role: "admin" } };
-        const mockRes = {
-          status: (code) => ({
-            json: (data) => {
-              console.log(`Task reminders processed: ${data.message || "completed"}`);
-              return mockRes;
-            }
-          })
-        };
-        await taskController.processReminders(mockReq, mockRes);
-      } catch (error) {
-        console.error("Error running task reminder check:", error);
-      }
-    });
-    console.log("Task reminder scheduler initialized (runs every 5 minutes)");
-
-    // Delete request retry: run every hour - expire 12h+ pending requests, create new, send email
-    cron.schedule("0 * * * *", async () => {
-      console.log("Running delete request retry job...");
-      try {
-        await runDeleteRequestRetry(getPool());
-      } catch (error) {
-        console.error("Error running delete request retry job:", error);
-      }
-    });
-    console.log("Delete request retry scheduler initialized (runs every hour)");
-  }
-} catch (error) {
-  console.log("node-cron not available. Scheduled cleanup jobs will not run automatically.");
-  console.log("To enable scheduled cleanup, install node-cron: npm install node-cron");
 }
 
 // Export for serverless
