@@ -910,7 +910,7 @@ app.get("/api/appointments/init", async (req, res) => {
 //   }
 // });
 
-// Cron API routes (same handlers as Vercel serverless; for local testing and if Express handles /api/cron)
+// Cron API routes (same as Vercel serverless; for local testing and if Express handles /api/cron)
 const archiveCleanupCron = require("./api/cron/archive-cleanup");
 const taskRemindersCron = require("./api/cron/task-reminders");
 const deleteRetryCron = require("./api/cron/delete-retry");
