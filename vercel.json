@@ -6,8 +6,5 @@
     { "src": "/test-db", "dest": "/index.js" },
     { "src": "/(.*)", "dest": "/index.js" }
   ],
-  "crons": [
-    { "path": "/api/cron/archive-cleanup", "schedule": "40 17 * * *" }
-  ],
   "env": { "NODE_ENV": "production" }
 }
