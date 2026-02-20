@@ -82,6 +82,29 @@ class Placement {
                 ALTER TABLE placements ADD COLUMN IF NOT EXISTS record_number INTEGER
             `);
 
+            // Backfill record_number for existing rows that predate allocation
+            await client.query(`
+                WITH ordered AS (
+                    SELECT
+                        id,
+                        ROW_NUMBER() OVER (ORDER BY id)
+                        + COALESCE((SELECT MAX(record_number) FROM placements WHERE record_number IS NOT NULL), 0) AS rn
+                    FROM placements
+                    WHERE record_number IS NULL
+                )
+                UPDATE placements p
+                SET record_number = ordered.rn
+                FROM ordered
+                WHERE p.id = ordered.id
+            `);
+
+            // Enforce uniqueness + non-null going forward
+            await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_placements_record_number ON placements (record_number)`);
+            await client.query(`ALTER TABLE placements ALTER COLUMN record_number SET NOT NULL`);
+
+            // Ensure sequence continues from current max
+            await client.query(`SELECT setval('placement_record_number_seq', (SELECT COALESCE(MAX(record_number), 0) FROM placements))`);
+
             // Create indexes for better query performance
             await client.query(`
                 CREATE INDEX IF NOT EXISTS idx_placements_job_id ON placements(job_id)
