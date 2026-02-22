@@ -85,6 +85,14 @@ class JobController {
                     ? organizationId
                     : organization_id;
 
+            // Resolve owner: custom_fields first, then top-level owner, then creator (userId)
+            const cf = custom_fields || {};
+            const ownerFromCustom = cf["Owner"] ?? cf["owner"];
+            const resolvedOwner =
+                ownerFromCustom !== undefined && ownerFromCustom !== null && String(ownerFromCustom).trim() !== ''
+                    ? ownerFromCustom
+                    : (owner !== undefined && owner !== null && owner !== '' ? owner : userId);
+
             // Build model data with custom_fields (same pattern as Organizations)
             const modelData = {
                 jobTitle,
@@ -105,7 +113,7 @@ class JobController {
                 benefits,
                 requiredSkills,
                 jobBoardStatus,
-                owner,
+                owner: resolvedOwner,
                 dateAdded,
                 userId,
                 custom_fields: custom_fields || {}, // Use snake_case to match model expectation
