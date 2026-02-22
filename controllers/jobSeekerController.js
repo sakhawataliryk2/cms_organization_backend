@@ -1,11 +1,17 @@
 const JobSeeker = require("../models/jobseeker");
 const Document = require("../models/document");
+const JobSeekerApplication = require("../models/jobSeekerApplication");
+const EmailTemplateModel = require("../models/emailTemplateModel");
 const { put } = require("@vercel/blob");
 const { normalizeCustomFields, normalizeListCustomFields } = require("../utils/exportHelpers");
+const { sendMail } = require("../services/emailService");
+const { renderTemplate, escapeHtml } = require("../utils/templateRenderer");
 
 const jwt = require("jsonwebtoken");
 
 const bcrypt = require("bcrypt");
+
+const DEBUG_TAG = "[Applications addApplication]";
 
 
 
@@ -13,9 +19,15 @@ class JobSeekerController {
 
   constructor(pool) {
 
+    this.pool = pool;
+
     this.jobSeekerModel = new JobSeeker(pool);
 
     this.documentModel = new Document(pool);
+
+    this.applicationModel = new JobSeekerApplication(pool);
+
+    this.emailTemplateModel = new EmailTemplateModel(pool);
 
     this.create = this.create.bind(this);
 
@@ -45,6 +57,8 @@ class JobSeekerController {
 
     this.addApplication = this.addApplication.bind(this);
 
+    this.updateApplication = this.updateApplication.bind(this);
+
     this.getDocuments = this.getDocuments.bind(this);
 
     this.getDocument = this.getDocument.bind(this);
@@ -63,9 +77,6 @@ class JobSeekerController {
     try {
       const { id } = req.params;
 
-      const userId = req.user.id;
-      const userRole = req.user.role;
-
       const jobSeeker = await this.jobSeekerModel.getById(id, null);
 
       if (!jobSeeker) {
@@ -75,14 +86,7 @@ class JobSeekerController {
         });
       }
 
-      const customFields =
-        typeof jobSeeker.custom_fields === "string"
-          ? JSON.parse(jobSeeker.custom_fields || "{}")
-          : jobSeeker.custom_fields || {};
-
-      const applications = Array.isArray(customFields.applications)
-        ? customFields.applications
-        : [];
+      const applications = await this.applicationModel.getByJobSeekerId(id);
 
       return res.status(200).json({
         success: true,
@@ -130,19 +134,8 @@ class JobSeekerController {
         });
       }
 
-      const customFields =
-        typeof jobSeeker.custom_fields === "string"
-          ? JSON.parse(jobSeeker.custom_fields || "{}")
-          : jobSeeker.custom_fields || {};
-
-      const existing = Array.isArray(customFields.applications)
-        ? customFields.applications
-        : [];
-
-      const newApplication = {
-        id:
-          application.id ||
-          `app_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
+      const newApplication = await this.applicationModel.create({
+        job_seeker_id: parseInt(id, 10),
         type: application.type,
         job_id: application.job_id || null,
         job_title: application.job_title || "",
@@ -150,24 +143,215 @@ class JobSeekerController {
         organization_name: application.organization_name || "",
         client_id: application.client_id || null,
         client_name: application.client_name || "",
-        created_at: new Date().toISOString(),
         created_by: application.created_by || userId,
         notes: application.notes || "",
         status: application.status || "",
-      };
+        submission_source: application.submission_source || application.submissionSource || "",
+      });
 
-      const updatedApplications = [...existing, newApplication];
+      const submittedByName =
+        application.submitted_by_name || application.submittedBy || "Recruiter";
+      const candidateName =
+        `${jobSeeker.first_name || ""} ${jobSeeker.last_name || ""}`.trim() ||
+        jobSeeker.full_name ||
+        "Candidate";
 
-      await this.jobSeekerModel.update(
-        id,
-        { custom_fields: { ...customFields, applications: updatedApplications } },
-        null
-      );
+      const toEmails = [];
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+      const submittedByEmail =
+        application.submitted_by_email || application.submittedByEmail || "";
+      if (submittedByEmail && emailRegex.test(String(submittedByEmail).trim())) {
+        toEmails.push(String(submittedByEmail).trim());
+      }
+
+      let jobTitleFromDb = newApplication.job_title || application.job_title || null;
+
+      try {
+        const pool = this.jobSeekerModel.pool;
+        const client = await pool.connect();
+        try {
+          if (jobSeeker.owner) {
+            const ownerId =
+              typeof jobSeeker.owner === "number"
+                ? jobSeeker.owner
+                : parseInt(jobSeeker.owner, 10);
+            if (!Number.isNaN(ownerId)) {
+              const ownerRow = await client.query(
+                "SELECT email FROM users WHERE id = $1",
+                [ownerId]
+              );
+              const ownerEmail = ownerRow.rows[0]?.email;
+              if (
+                ownerEmail &&
+                emailRegex.test(String(ownerEmail).trim()) &&
+                !toEmails.includes(String(ownerEmail).trim())
+              ) {
+                toEmails.push(String(ownerEmail).trim());
+              }
+            }
+          }
+
+          if (application.job_id) {
+            const jobRow = await client.query(
+              "SELECT owner, job_title FROM jobs WHERE id = $1",
+              [application.job_id]
+            );
+            const job = jobRow.rows[0];
+            if (job?.job_title) {
+              jobTitleFromDb = job.job_title;
+              newApplication.job_title = job.job_title;
+            }
+            if (job?.owner) {
+              const jobOwnerId =
+                typeof job.owner === "number"
+                  ? job.owner
+                  : parseInt(job.owner, 10);
+              if (!Number.isNaN(jobOwnerId)) {
+                const jobOwnerRow = await client.query(
+                  "SELECT email FROM users WHERE id = $1",
+                  [jobOwnerId]
+                );
+                const jobOwnerEmail = jobOwnerRow.rows[0]?.email;
+                if (
+                  jobOwnerEmail &&
+                  emailRegex.test(String(jobOwnerEmail).trim()) &&
+                  !toEmails.includes(String(jobOwnerEmail).trim())
+                ) {
+                  toEmails.push(String(jobOwnerEmail).trim());
+                }
+              }
+            }
+          }
+        } finally {
+          client.release();
+        }
+
+        const jobTitleDisplay = jobTitleFromDb
+          ? (application.job_id
+              ? `${jobTitleFromDb} (Job #${application.job_id})`
+              : jobTitleFromDb)
+          : application.job_id
+            ? `Job #${application.job_id}`
+            : "Job";
+
+        const submissionTypeLabel =
+          newApplication.type === "client_submissions"
+            ? "Client Submission"
+            : newApplication.type === "web_submissions"
+              ? "Web Submission"
+              : newApplication.type === "submissions"
+                ? "Submission"
+                : newApplication.type || "—";
+        const submissionSource =
+          application.submission_source ||
+          application.submissionSource ||
+          "—";
+        const submittedAt = new Date(newApplication.created_at).toLocaleString(
+          "en-GB",
+          { dateStyle: "medium", timeStyle: "short" }
+        );
+        const frontendBase =
+          process.env.FRONTEND_URL ||
+          process.env.NEXT_PUBLIC_BASE_URL ||
+          "https://your-ats.com";
+        const viewCandidateUrl = `${frontendBase.replace(/\/$/, "")}/dashboard/job-seekers/view?id=${id}`;
+
+        const submissionSummary =
+          (newApplication.notes && String(newApplication.notes).trim()) ||
+          "No additional notes provided.";
+
+        const uniqueEmails = [...new Set(toEmails)];
+
+        if (uniqueEmails.length > 0) {
+          const tpl = await this.emailTemplateModel.getTemplateByType("JOB_SEEKER_APPLICATION_SUBMISSION");
+          const candidateNameLink = `<a href="${viewCandidateUrl}" style="color:#2563eb;text-decoration:underline;">${escapeHtml(candidateName)}</a>`;
+          const vars = {
+            candidateName,
+            candidateNameLink,
+            jobTitle: jobTitleDisplay,
+            submittedBy: submittedByName,
+            submissionType: submissionTypeLabel,
+            source: submissionSource,
+            submittedAt,
+            submissionSummary,
+            viewCandidateUrl,
+          };
+          const safeKeys = ["candidateNameLink"];
+
+          if (tpl) {
+            const subject = renderTemplate(tpl.subject, vars, safeKeys);
+            const html = renderTemplate(tpl.body, vars, safeKeys)
+              .replace(/\r\n/g, "\n")
+              .replace(/\n/g, "<br/>");
+            await sendMail({
+              to: uniqueEmails,
+              subject,
+              html,
+            });
+          } else {
+            const emailBody = `
+Candidate: ${candidateName}
+Job: ${jobTitleDisplay}
+
+Submitted By: ${submittedByName}
+Submission Type: ${submissionTypeLabel}
+Source: ${submissionSource}
+Submitted At: ${submittedAt}
+
+Submission Summary:
+------------------------------------
+${submissionSummary}
+------------------------------------
+
+View Candidate:
+${viewCandidateUrl}
+
+This is an automated notification from the ATS.
+`.trim();
+            await sendMail({
+              to: uniqueEmails,
+              subject: `New Candidate Submission: ${candidateName} → ${jobTitleFromDb || (application.job_id ? `Job #${application.job_id}` : "Job")}`,
+              text: emailBody,
+            });
+          }
+          console.log(DEBUG_TAG, "notification email sent", {
+            to: uniqueEmails,
+            subjectCandidate: candidateName,
+            jobTitleDisplay,
+            submittedByName,
+          });
+        } else {
+          console.warn(DEBUG_TAG, "no recipient emails; skipping notification", {
+            submitted_by_email: application.submitted_by_email || application.submittedByEmail,
+            jobSeekerOwner: jobSeeker.owner,
+            job_id: application.job_id,
+          });
+        }
+
+        try {
+          const noteText = `Candidate ${candidateName} submitted to ${jobTitleDisplay} by ${submittedByName}.`;
+          await this.jobSeekerModel.addNoteAndUpdateContact(
+            id,
+            noteText,
+            userId,
+            "Client Submission",
+            "Client Submission",
+            null
+          );
+          console.log(DEBUG_TAG, "system note added");
+        } catch (noteErr) {
+          console.error(DEBUG_TAG, "system note failed", noteErr);
+        }
+      } catch (emailErr) {
+        console.error(DEBUG_TAG, "notification email failed", emailErr);
+      }
+
+      const applications = await this.applicationModel.getByJobSeekerId(id);
       return res.status(201).json({
         success: true,
         application: newApplication,
-        applications: updatedApplications,
+        applications,
       });
     } catch (error) {
       console.error("Error adding job seeker application:", error);
@@ -179,13 +363,58 @@ class JobSeekerController {
     }
   }
 
-
+  async updateApplication(req, res) {
+    try {
+      const { id: jobSeekerId, applicationId } = req.params;
+      const body = req.body || {};
+      const applicationIdNum = parseInt(applicationId, 10);
+      if (Number.isNaN(applicationIdNum)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid application ID",
+        });
+      }
+      const jobSeeker = await this.jobSeekerModel.getById(jobSeekerId, null);
+      if (!jobSeeker) {
+        return res.status(404).json({
+          success: false,
+          message: "Job seeker not found",
+        });
+      }
+      const updates = {};
+      if (body.status !== undefined) updates.status = String(body.status).trim();
+      const updated = await this.applicationModel.update(
+        applicationIdNum,
+        parseInt(jobSeekerId, 10),
+        updates
+      );
+      if (!updated) {
+        return res.status(404).json({
+          success: false,
+          message: "Application not found",
+        });
+      }
+      return res.status(200).json({
+        success: true,
+        application: updated,
+      });
+    } catch (error) {
+      console.error("Error updating job seeker application:", error);
+      return res.status(500).json({
+        success: false,
+        message: "An error occurred while updating the application",
+        error: process.env.NODE_ENV === "production" ? undefined : error.message,
+      });
+    }
+  }
 
   // Initialize database tables
 
   async initTables() {
 
     await this.jobSeekerModel.initTable();
+
+    await this.applicationModel.initTable();
 
   }
 

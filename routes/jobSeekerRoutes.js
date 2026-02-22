@@ -98,6 +98,8 @@ function createJobSeekerRouter(jobSeekerController, authMiddleware) {
 
     router.post('/:id/applications', jobSeekerController.addApplication);
 
+    router.patch('/:id/applications/:applicationId', jobSeekerController.updateApplication);
+
 
     
     return router;
