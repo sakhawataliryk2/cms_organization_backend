@@ -147,10 +147,6 @@ class JobController {
     // Get all jobs
     async getAll(req, res) {
         try {
-            // Get the current user's ID from the auth middleware
-            const userId = req.user.id;
-            const userRole = req.user.role;
-
             const jobs = await this.jobModel.getAll(null);
             const normalized = normalizeListCustomFields(jobs);
 
@@ -213,6 +209,17 @@ class JobController {
             const userRole = req.user.role;
 
             console.log(`User role: ${userRole}, User ID: ${userId}`);
+
+            // Resolve owner for update: custom_fields first, then top-level owner, then current user
+            const cf = updateData.custom_fields || updateData.customFields || {};
+            const ownerFromCustom = cf["Owner"] ?? cf["owner"];
+            const resolvedOwner =
+                ownerFromCustom !== undefined && ownerFromCustom !== null && String(ownerFromCustom).trim() !== ''
+                    ? ownerFromCustom
+                    : (updateData.owner !== undefined && updateData.owner !== null && updateData.owner !== ''
+                        ? updateData.owner
+                        : userId);
+            updateData.owner = resolvedOwner;
 
             const job = await this.jobModel.update(id, updateData, null);
 
@@ -300,6 +307,16 @@ class JobController {
                     console.log(`\n--- Processing job ${id} ---`);
                     // Clone updates to avoid mutations affecting other iterations
                     const updateData = JSON.parse(JSON.stringify(updates));
+                    // Resolve owner: custom_fields first, then top-level owner, then current user
+                    const cf = updateData.custom_fields || updateData.customFields || {};
+                    const ownerFromCustom = cf["Owner"] ?? cf["owner"];
+                    const resolvedOwner =
+                        ownerFromCustom !== undefined && ownerFromCustom !== null && String(ownerFromCustom).trim() !== ''
+                            ? ownerFromCustom
+                            : (updateData.owner !== undefined && updateData.owner !== null && updateData.owner !== ''
+                                ? updateData.owner
+                                : userId);
+                    updateData.owner = resolvedOwner;
                     console.log(`Calling jobModel.update(${id}, updates, null)`);
                     console.log(`Updates object:`, JSON.stringify(updates, null, 2));
                     
