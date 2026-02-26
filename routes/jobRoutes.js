@@ -46,6 +46,9 @@ function createJobRouter(jobController, authMiddleware) {
     // Publish / distribute job (LinkedIn, Job Board) — works without credentials; completes when credentials are added
     router.post('/:id/publish', jobController.publish);
 
+    // AI Smart Match: returns job seeker IDs that best match the job (no DB writes, short-lived cache)
+    router.post('/:id/ai-match', jobController.aiMatch);
+
     // Document routes
     router.get('/:id/documents', jobController.getDocuments);
     router.post('/:id/documents/upload', jobController.uploadDocument);

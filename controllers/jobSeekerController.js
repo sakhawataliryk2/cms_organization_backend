@@ -58,6 +58,7 @@ class JobSeekerController {
     this.addApplication = this.addApplication.bind(this);
 
     this.updateApplication = this.updateApplication.bind(this);
+    this.getCandidateFlowStats = this.getCandidateFlowStats.bind(this);
 
     this.getDocuments = this.getDocuments.bind(this);
 
@@ -71,6 +72,29 @@ class JobSeekerController {
 
     this.deleteDocument = this.deleteDocument.bind(this);
 
+  }
+
+  // GET /job-seekers/candidate-flow - prescreen counts and list for candidate flow dashboard
+  async getCandidateFlowStats(req, res) {
+    try {
+      const userId = req.user?.id;
+      const [prescreenedTotal, prescreenedByUserLast30Days] = await Promise.all([
+        this.jobSeekerModel.getPrescreenedCount(),
+        userId ? this.jobSeekerModel.getPrescreenedByUserInLast30Days(userId) : [],
+      ]);
+      res.status(200).json({
+        success: true,
+        prescreenedTotal,
+        prescreenedByUserLast30Days,
+      });
+    } catch (error) {
+      console.error("Error getting candidate flow stats:", error);
+      res.status(500).json({
+        success: false,
+        message: "An error occurred while retrieving candidate flow stats",
+        error: process.env.NODE_ENV === "production" ? undefined : error.message,
+      });
+    }
   }
 
   async getApplications(req, res) {

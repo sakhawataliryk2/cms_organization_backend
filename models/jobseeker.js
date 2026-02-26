@@ -871,6 +871,57 @@ class JobSeeker {
             client.release();
         }
     }
+
+    /**
+     * Count of job seekers who have at least one prescreen action note (in notes tab).
+     * Excludes archived job seekers.
+     */
+    async getPrescreenedCount() {
+        const client = await this.pool.connect();
+        try {
+            const query = `
+                SELECT COUNT(DISTINCT n.job_seeker_id) AS count
+                FROM job_seeker_notes n
+                INNER JOIN job_seekers js ON js.id = n.job_seeker_id AND js.archived_at IS NULL
+                WHERE (LOWER(COALESCE(n.action, n.note_type, '')) ~ 'pre\\s*screen|prescreen')
+            `;
+            const result = await client.query(query, []);
+            return parseInt(result.rows[0]?.count || '0', 10);
+        } finally {
+            client.release();
+        }
+    }
+
+    /**
+     * Job seekers prescreened in the last 30 days by the given user.
+     * Returns id, name, record_number, and latest prescreen note date for display/ordering.
+     */
+    async getPrescreenedByUserInLast30Days(userId) {
+        const client = await this.pool.connect();
+        try {
+            const query = `
+                SELECT js.id, js.first_name, js.last_name, js.record_number,
+                       MAX(n.created_at) AS latest_prescreen_at
+                FROM job_seekers js
+                INNER JOIN job_seeker_notes n ON n.job_seeker_id = js.id
+                WHERE js.archived_at IS NULL
+                  AND n.created_by = $1
+                  AND n.created_at >= NOW() - INTERVAL '30 days'
+                  AND (LOWER(COALESCE(n.action, n.note_type, '')) ~ 'pre\\s*screen|prescreen')
+                GROUP BY js.id, js.first_name, js.last_name, js.record_number
+                ORDER BY latest_prescreen_at DESC
+            `;
+            const result = await client.query(query, [userId]);
+            return result.rows.map((row) => ({
+                id: row.id,
+                name: [row.first_name, row.last_name].filter(Boolean).join(' ').trim() || `#${row.record_number}`,
+                record_number: row.record_number,
+                latest_prescreen_at: row.latest_prescreen_at,
+            }));
+        } finally {
+            client.release();
+        }
+    }
 }
 
 module.exports = JobSeeker;

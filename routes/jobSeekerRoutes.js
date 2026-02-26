@@ -13,6 +13,9 @@ function createJobSeekerRouter(jobSeekerController, authMiddleware) {
 
 
 
+    // Candidate flow dashboard stats (must be before /:id)
+    router.get('/candidate-flow', jobSeekerController.getCandidateFlowStats);
+
     // Get all job seekers 
 
     // (admins see all, regular users see only their own)

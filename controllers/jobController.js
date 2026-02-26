@@ -1,5 +1,6 @@
 // controllers/jobController.js
 const Job = require('../models/job');
+const JobSeeker = require('../models/jobseeker');
 const Document = require('../models/document');
 const EmailTemplateModel = require('../models/emailTemplateModel');
 const User = require('../models/user');
@@ -59,6 +60,8 @@ class JobController {
         this.updateDocument = this.updateDocument.bind(this);
         this.deleteDocument = this.deleteDocument.bind(this);
         this.publish = this.publish.bind(this);
+        this.jobSeekerModel = new JobSeeker(pool);
+        this.aiMatch = this.aiMatch.bind(this);
     }
 
     /**
@@ -1095,6 +1098,201 @@ class JobController {
 
         xml += '</jobs>';
         return xml;
+    }
+
+    /** In-memory cache for AI match results: key = 'ai-match-${jobId}', value = { matchedIds, expires } */
+    static _aiMatchCache = {};
+    static _aiMatchCacheTtlMs = 10 * 60 * 1000; // 10 minutes
+
+    /**
+     * POST /jobs/:id/ai-match
+     * Returns { matchedIds: string[] } - job seeker IDs that best match the job (no DB writes, short-lived cache).
+     */
+    async aiMatch(req, res) {
+        const { id: jobId } = req.params;
+        const cacheKey = `ai-match-${jobId}`;
+
+        try {
+            // Check cache first
+            const cached = JobController._aiMatchCache[cacheKey];
+            if (cached && cached.expires > Date.now()) {
+                return res.status(200).json({ matchedIds: cached.matchedIds || [] });
+            }
+
+            const job = await this.jobModel.getById(jobId, null);
+            if (!job) {
+                return res.status(404).json({ success: false, message: 'Job not found' });
+            }
+
+            let candidates = await this.jobSeekerModel.getAll(null, false); // unarchived only
+            if (!candidates || candidates.length === 0) {
+                JobController._aiMatchCache[cacheKey] = { matchedIds: [], expires: Date.now() + JobController._aiMatchCacheTtlMs };
+                return res.status(200).json({ matchedIds: [] });
+            }
+
+            const jobSkills = (job.required_skills || '').toString().toLowerCase();
+            const jobSkillsList = jobSkills.split(/[,;]/).map(s => s.trim()).filter(Boolean);
+
+            if (jobSkillsList.length > 0) {
+                candidates = candidates.filter(js => {
+                    const s = (js.skills || '').toString().toLowerCase();
+                    return jobSkillsList.some(skill => s.includes(skill));
+                });
+            }
+
+            if (candidates.length === 0) {
+                JobController._aiMatchCache[cacheKey] = { matchedIds: [], expires: Date.now() + JobController._aiMatchCacheTtlMs };
+                return res.status(200).json({ matchedIds: [] });
+            }
+
+            candidates = candidates.slice(0, 50);
+
+            const jobCustomFields = job.custom_fields && typeof job.custom_fields === 'object'
+                ? job.custom_fields
+                : (typeof job.custom_fields === 'string' ? (() => { try { return JSON.parse(job.custom_fields); } catch { return {}; } })() : {});
+
+            const jobForPrompt = {
+                title: job.job_title || '',
+                description: (job.job_description || '').toString().slice(0, 2000),
+                skills: job.required_skills || '',
+                experience: (jobCustomFields.experience || jobCustomFields.Experience || '').toString(),
+                education: (jobCustomFields.education || jobCustomFields.Education || '').toString(),
+                customFields: JSON.stringify(jobCustomFields),
+            };
+
+            const candidatesForPrompt = candidates.map(js => {
+                const cf = js.custom_fields && typeof js.custom_fields === 'object'
+                    ? js.custom_fields
+                    : (typeof js.custom_fields === 'string' ? (() => { try { return JSON.parse(js.custom_fields); } catch { return {}; } })() : {});
+                return {
+                    id: String(js.id),
+                    skills: js.skills || '',
+                    experience: (cf.experience || cf.Experience || '').toString(),
+                    education: (cf.education || cf.Education || '').toString(),
+                    summary: (js.resume_text || '').toString().slice(0, 1500),
+                    customFields: JSON.stringify(cf),
+                };
+            });
+
+            const prompt = `You are a professional AI recruitment matching system.
+
+Your task is to analyze a job and a list of candidates, then return ONLY a JSON array of jobSeekerIds that are the best fit.
+
+You must consider:
+- Required skills (highest priority)
+- Experience level and years
+- Education requirements
+- Certifications
+- Custom fields (very important)
+- Industry/domain relevance
+- Role similarity
+- Overall profile alignment
+
+-------------------------
+JOB DETAILS:
+Title: ${jobForPrompt.title}
+Description: ${jobForPrompt.description}
+Required Skills: ${jobForPrompt.skills}
+Experience Required: ${jobForPrompt.experience}
+Education: ${jobForPrompt.education}
+Custom Fields: ${jobForPrompt.customFields}
+
+Custom fields may include dynamic attributes such as:
+- Languages
+- Tools
+- Frameworks
+- Certifications
+- Location
+- Industry
+- Availability
+- Salary expectation
+- Domain expertise
+- Or any additional structured field
+
+Treat custom fields as equal or higher priority if marked required.
+
+-------------------------
+CANDIDATES:
+${JSON.stringify(candidatesForPrompt)}
+
+-------------------------
+Matching Instructions:
+
+1. Prioritize required skills match.
+2. Match experience years realistically (do not over-qualify juniors for senior roles).
+3. Match education only if relevant to role.
+4. Strongly consider overlap in custom fields.
+5. Prefer candidates whose custom field values align closely with job custom fields.
+6. Rank by overall qualification strength.
+7. Return maximum 15 IDs.
+8. If few strong matches exist, return fewer.
+9. If none qualify, return [].
+
+-------------------------
+STRICT OUTPUT REQUIREMENTS:
+
+Return ONLY valid JSON.
+Return ONLY an array of IDs.
+No explanations.
+No text.
+No markdown.
+No comments.
+No formatting.
+
+Correct format example:
+["id1","id2","id3"]`;
+
+            const apiKey = process.env.OPENROUTER_API_KEY;
+            if (!apiKey) {
+                console.error('OPENROUTER_API_KEY not set');
+                JobController._aiMatchCache[cacheKey] = { matchedIds: [], expires: Date.now() + JobController._aiMatchCacheTtlMs };
+                return res.status(200).json({ matchedIds: [] });
+            }
+
+            const openRouterRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${apiKey}`,
+                },
+                body: JSON.stringify({
+                    model: 'stepfun/step-3.5-flash:free',
+                    temperature: 0.2,
+                    max_tokens: 800,
+                    messages: [{ role: 'user', content: prompt }],
+                }),
+            });
+
+            const openRouterData = await openRouterRes.json().catch(() => ({}));
+            const content = openRouterData?.choices?.[0]?.message?.content;
+            const validIds = new Set(candidates.map(c => String(c.id)));
+
+            let parsed = [];
+            if (content && typeof content === 'string') {
+                const trimmed = content.trim().replace(/^```\w*\n?|\n?```$/g, '').trim();
+                try {
+                    const arr = JSON.parse(trimmed);
+                    if (Array.isArray(arr)) {
+                        parsed = arr
+                            .filter(item => item != null && String(item).trim() !== '')
+                            .map(item => String(item).trim())
+                            .filter(id => validIds.has(id));
+                    }
+                } catch (e) {
+                    // ignore parse error
+                }
+            }
+
+            const matchedIds = parsed.slice(0, 15);
+            JobController._aiMatchCache[cacheKey] = {
+                matchedIds,
+                expires: Date.now() + JobController._aiMatchCacheTtlMs,
+            };
+            return res.status(200).json({ matchedIds });
+        } catch (err) {
+            console.error('aiMatch error:', err);
+            return res.status(200).json({ matchedIds: [] });
+        }
     }
 
     // Helper to escape XML special characters
