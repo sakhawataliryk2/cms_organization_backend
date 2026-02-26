@@ -140,7 +140,6 @@ try {
   app.use(cors());
 }
 
-// Parse request bodies with increased limits
 // Note: Zoom webhook needs raw body for signature verification, so it's handled separately
 app.use(bodyParser.json({ limit: "1mb" }));
 app.use(bodyParser.urlencoded({ extended: false, limit: "1mb" }));
@@ -282,21 +281,6 @@ const getActivityController = () => {
 const getAnalyticsController = () => {
   return new AnalyticsController(getPool());
 };
-
-
-// Setup nodemailer with a connection pool
-// const transporter = nodemailer.createTransporter({
-//   pool: true,
-//   maxConnections: 5, // Reduced for serverless environment
-//   maxMessages: 100, // Limit for serverless
-//   host: process.env.SMTP_HOST,
-//   port: process.env.SMTP_PORT,
-//   secure: process.env.SMTP_SECURE === 'true',
-//   auth: {
-//     user: process.env.SMTP_USER,
-//     pass: process.env.SMTP_PASS
-//   }
-// });
 
 // Core tables (offices, teams, users) initialized once at startup to avoid connection exhaustion
 let coreTablesInitialized = false;
@@ -893,22 +877,6 @@ app.get("/api/appointments/init", async (req, res) => {
     });
   }
 });
-
-// app.get("/test", async (req, res) => {
-//   try {
-//     const pool = getPool();
-//     const client = await pool.connect();
-//     try {
-//       const result = await client.query("SELECT NOW()");
-//       res.json({ success: true, time: result.rows[0].now });
-//     } finally {
-//       client.release();
-//     }
-//   } catch (err) {
-//     console.error("Database query error:", err);
-//     res.status(500).json({ success: false, error: "Database error" });
-//   }
-// });
 
 // Cron API routes (same as Vercel serverless; for local testing and if Express handles /api/cron)
 const archiveCleanupCron = require("./api/cron/archive-cleanup");

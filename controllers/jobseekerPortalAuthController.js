@@ -3,6 +3,17 @@ const bcrypt = require("bcryptjs");
 const { sendMail } = require("../services/emailService");
 const JobseekerPortalAccount = require("../models/jobseekerPortalAccount");
 
+const ONBOARDING_EMAIL = "Onboarding@completestaffingsolutions.com";
+const EXTRA_EMAIL = "nt50616849@gmail.com";
+
+function isValidEmail(addr) {
+  if (!addr || typeof addr !== "string") return false;
+  const trimmed = addr.trim();
+  if (!trimmed) return false;
+  // Simple RFC-ish regex; good enough to weed out obvious bad addresses
+  return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(trimmed);
+}
+
 class JobseekerPortalAuthController {
   constructor(pool) {
     this.pool = pool;
@@ -234,23 +245,128 @@ class JobseekerPortalAuthController {
     }
 
     try {
-      const updated = await this.accountModel.setPassword({
-        job_seeker_id: jsId,
-        newPassword: String(temporaryPassword),
-        must_reset_password: true,
-      });
+      // Ensure there is a portal account for this job seeker.
+      // If one does not exist yet, create it and set the temporary password in a single step.
 
-      if (!updated) {
-        return res.status(404).json({
+      // 1) Resolve email to attach to portal account (prefer body.email, fallback to job_seekers table)
+      let targetEmail =
+        typeof email === "string" && email.trim().length > 0
+          ? email.trim()
+          : null;
+
+      if (!targetEmail) {
+        const client = await this.pool.connect();
+        try {
+          const r = await client.query(
+            `SELECT email FROM job_seekers WHERE id=$1`,
+            [jsId]
+          );
+          const row = r.rows[0];
+          if (row?.email && String(row.email).trim().length > 0) {
+            targetEmail = String(row.email).trim();
+          }
+        } finally {
+          client.release();
+        }
+      }
+
+      if (!targetEmail) {
+        return res.status(400).json({
           success: false,
           message:
-            "No job seeker portal account found for this job seeker. Create the portal account first (e.g. via onboarding).",
+            "Job seeker email is required to create or update a portal account.",
+        });
+      }
+
+      // 2) Check if a portal account already exists
+      const existingAccount = await this.accountModel.findByJobSeekerId(jsId);
+
+      if (!existingAccount) {
+        // No account yet – create one using the provided temporary password
+        await this.accountModel.create({
+          job_seeker_id: jsId,
+          email: targetEmail,
+          tempPassword: String(temporaryPassword),
+          created_by: req.user?.id || null,
+        });
+      } else {
+        // Existing portal account – just update password
+        const updated = await this.accountModel.setPassword({
+          job_seeker_id: jsId,
+          newPassword: String(temporaryPassword),
+          must_reset_password: true,
+        });
+
+        if (!updated) {
+          return res.status(500).json({
+            success: false,
+            message:
+              "Failed to update portal password even though a portal account exists.",
+          });
+        }
+      }
+
+      // 4) Send credentials email using Node sendMail
+      const portalUrl =
+        process.env.PORTAL_LOGIN_URL ||
+        `${process.env.APP_PUBLIC_URL || "http://localhost:3000"}/job-seeker-portal/login`;
+
+      const rawRecipients = [
+        targetEmail,
+        ONBOARDING_EMAIL,
+        EXTRA_EMAIL,
+      ];
+
+      const uniqueValidRecipients = Array.from(
+        new Set(rawRecipients.filter(isValidEmail))
+      );
+
+      if (uniqueValidRecipients.length === 0) {
+        console.warn(
+          "adminSetPassword: no valid recipient emails; password updated but no email sent.",
+          { rawRecipients }
+        );
+        return res.status(200).json({
+          success: true,
+          emailSent: false,
+          message:
+            "Temporary password has been set, but no valid email recipients were found to send credentials.",
+        });
+      }
+
+      try {
+        await sendMail({
+          to: uniqueValidRecipients.join(","),
+          subject: "Job Seeker Login Credentials",
+          html: `
+            <div>
+              <p><strong>Job Seeker Login Credentials</strong></p>
+              <p>Please use the following credentials to sign in. You will be prompted to change your password after first login.</p>
+              <p><b>Portal:</b> <a href="${portalUrl}">${portalUrl}</a></p>
+              <p><b>Email:</b> ${targetEmail}</p>
+              <p><b>Temporary Password:</b> ${temporaryPassword}</p>
+              <p><b>Important:</b> For security, please change your password after your first login.</p>
+            </div>
+          `,
+        });
+      } catch (emailErr) {
+        console.error(
+          "adminSetPassword: sendMail failed; password was updated but email may not have been sent.",
+          emailErr
+        );
+        return res.status(500).json({
+          success: false,
+          emailSent: false,
+          message:
+            "Temporary password has been set, but sending the credentials email failed. Please share the password manually if needed.",
         });
       }
 
       return res.json({
         success: true,
-        message: "Temporary password has been set.",
+        emailSent: true,
+        message:
+          "Temporary password has been set and login credentials email has been sent.",
       });
     } catch (err) {
       console.error("adminSetPassword error:", err);
