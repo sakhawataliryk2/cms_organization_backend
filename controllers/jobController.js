@@ -1,13 +1,43 @@
 // controllers/jobController.js
 const Job = require('../models/job');
 const Document = require('../models/document');
+const EmailTemplateModel = require('../models/emailTemplateModel');
+const User = require('../models/user');
+const { sendMail } = require('../services/emailService');
+const { renderTemplate, escapeHtml } = require('../utils/templateRenderer');
 const { put } = require('@vercel/blob');
 const { normalizeCustomFields, normalizeListCustomFields } = require('../utils/exportHelpers');
 
+/** Find custom_fields key that matches "Distribution list" (case-insensitive, flexible) */
+function getDistributionListKey(customFields) {
+    if (!customFields || typeof customFields !== 'object') return null;
+    const target = 'distribution list';
+    for (const key of Object.keys(customFields)) {
+        const n = String(key).toLowerCase().replace(/\s+/g, ' ').trim();
+        if (n === target || (n.includes('distribution') && n.includes('list'))) return key;
+    }
+    return null;
+}
+
+/** Get array of user IDs from distribution list value (array or comma-separated string) */
+function getDistributionUserIds(customFields) {
+    const key = getDistributionListKey(customFields);
+    if (!key) return [];
+    const val = customFields[key];
+    if (Array.isArray(val)) return val.map((id) => String(id)).filter(Boolean);
+    if (val != null && String(val).trim() !== '') {
+        return String(val).split(/[,;]/).map((s) => s.trim()).filter(Boolean);
+    }
+    return [];
+}
+
 class JobController {
     constructor(pool) {
+        this.pool = pool;
         this.jobModel = new Job(pool);
         this.documentModel = new Document(pool);
+        this.emailTemplateModel = new EmailTemplateModel(pool);
+        this.userModel = new User(pool);
         this.create = this.create.bind(this);
         this.getAll = this.getAll.bind(this);
         this.getById = this.getById.bind(this);
@@ -40,6 +70,51 @@ class JobController {
         const hasLinkedIn = !!(process.env.LINKEDIN_CLIENT_ID && process.env.LINKEDIN_CLIENT_SECRET);
         const hasJobBoard = !!process.env.JOB_BOARD_API_KEY;
         return hasLinkedIn || hasJobBoard;
+    }
+
+    /**
+     * Send job distribution emails to users in the Distribution list custom field.
+     * Uses template type JOB_DISTRIBUTION. Non-blocking; errors are logged only.
+     */
+    async _sendJobDistributionEmails(jobId, customFields) {
+        const userIds = getDistributionUserIds(customFields);
+        if (!userIds.length) return;
+        try {
+            const tpl = await this.emailTemplateModel.getTemplateByType('JOB_DISTRIBUTION');
+            if (!tpl || !tpl.subject || !tpl.body) return;
+            const job = await this.jobModel.getById(jobId);
+            if (!job) return;
+            const users = await this.userModel.getUsersByIds(userIds);
+            if (!users.length) return;
+            const baseUrl = process.env.FRONTEND_URL || process.env.APP_URL || 'http://localhost:3000';
+            const jobLink = `${baseUrl}/dashboard/jobs/view?id=${job.id}`;
+            const jobTitleText = job.job_title || 'Job';
+            const jobTitleLink = '<a href="' + escapeHtml(jobLink) + '">' + escapeHtml(jobTitleText) + '</a>';
+            const vars = {
+                jobTitle: jobTitleText,
+                jobTitleLink,
+                recordNumber: job.record_number != null ? String(job.record_number) : '',
+                jobLink,
+                organizationName: job.organization_name || '',
+                status: job.status || '',
+                employmentType: job.employment_type || '',
+                createdByName: job.created_by_name || '',
+            };
+            const subject = renderTemplate(tpl.subject, vars);
+            let html = renderTemplate(tpl.body, vars, ['jobLink', 'jobTitleLink']);
+            // So plain-text newlines from the admin template show as line breaks in HTML email
+            html = html.replace(/\r\n/g, '\n').replace(/\n/g, '<br>\n');
+            for (const user of users) {
+                if (!user.email) continue;
+                try {
+                    await sendMail({ to: user.email, subject, html });
+                } catch (err) {
+                    console.error(`Job distribution email failed for user ${user.id}:`, err.message);
+                }
+            }
+        } catch (err) {
+            console.error('Job distribution emails error:', err.message);
+        }
     }
 
     // Initialize database tables
@@ -124,6 +199,9 @@ class JobController {
             const job = await this.jobModel.create(modelData);
 
             console.log("Job created successfully:", job);
+
+            // Send distribution emails if Distribution list has recipients (non-blocking)
+            this._sendJobDistributionEmails(job.id, custom_fields || {}).catch(() => {});
 
             // Send success response
             res.status(201).json({
@@ -232,6 +310,10 @@ class JobController {
             }
 
             console.log("Job updated successfully:", job);
+            // Send distribution emails if Distribution list has recipients (non-blocking)
+            const cf2 = job.custom_fields || updateData.custom_fields || updateData.customFields || {};
+            this._sendJobDistributionEmails(id, typeof cf2 === 'string' ? {} : cf2).catch(() => {});
+
             res.status(200).json({
                 success: true,
                 message: 'Job updated successfully',

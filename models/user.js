@@ -273,6 +273,28 @@ class User {
         }
     }
 
+    // Get users by IDs (for distribution list etc.) - returns id, name, email
+    async getUsersByIds(ids) {
+        if (!ids || !Array.isArray(ids)) return [];
+        const cleanIds = ids.map((id) => parseInt(String(id), 10)).filter((id) => !isNaN(id) && id > 0);
+        if (!cleanIds.length) return [];
+        const client = await this.pool.connect();
+        try {
+            const placeholders = cleanIds.map((_, i) => `$${i + 1}`).join(", ");
+            const query = `
+                SELECT id, name, email
+                FROM users
+                WHERE id IN (${placeholders}) AND status = true
+            `;
+            const result = await client.query(query, cleanIds);
+            return result.rows;
+        } catch (error) {
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
+
     // Get users by team
     async getUsersByTeam(teamId) {
         const client = await this.pool.connect();

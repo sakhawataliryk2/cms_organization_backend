@@ -171,7 +171,7 @@ class TransferController {
 
     if (tpl) {
       const subject = renderTemplate(tpl.subject, vars, safeKeys);
-      let html = renderTemplate(tpl.body, bodyVars, safeKeys);
+      let html = renderTemplate(tpl.body, bodyVars, safeKeys, { newlinesToBr: true });
       html = html.replace(/\r\n/g, "\n").replace(/\n/g, "<br/>");
       await sendMail({
         to: PAYROLL_EMAIL,
