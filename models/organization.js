@@ -808,17 +808,16 @@ class Organization {
     async getNotes(organizationId) {
         const client = await this.pool.connect();
         try {
-            const query = `
+            // 1. Direct organization notes
+            const orgNotesQuery = `
                 SELECT n.*, u.name as created_by_name
                 FROM organization_notes n
                 LEFT JOIN users u ON n.created_by = u.id
                 WHERE n.organization_id = $1
                 ORDER BY n.created_at DESC
             `;
-
-            const result = await client.query(query, [organizationId]);
-            // Parse about_references JSONB to object/array
-            return result.rows.map((row) => {
+            const orgResult = await client.query(orgNotesQuery, [organizationId]);
+            const orgNotes = orgResult.rows.map((row) => {
                 if (row.about_references && typeof row.about_references === 'string') {
                     try {
                         row.about_references = JSON.parse(row.about_references);
@@ -826,8 +825,50 @@ class Organization {
                         // If parsing fails, keep as is
                     }
                 }
-                return row;
+                return {
+                    ...row,
+                    source_type: 'organization',
+                    source_id: null,
+                    hiring_manager_display: null
+                };
             });
+
+            // 2. Notes from hiring managers affiliated with this organization
+            const hmNotesQuery = `
+                SELECT n.*, u.name as created_by_name,
+                    hm.id as hiring_manager_id,
+                    hm.first_name, hm.last_name, hm.record_number
+                FROM hiring_manager_notes n
+                LEFT JOIN users u ON n.created_by = u.id
+                INNER JOIN hiring_managers hm ON n.hiring_manager_id = hm.id
+                WHERE hm.organization_id = $1
+                ORDER BY n.created_at DESC
+            `;
+            const hmResult = await client.query(hmNotesQuery, [organizationId]);
+            const hmNotes = hmResult.rows.map((row) => {
+                if (row.about_references && typeof row.about_references === 'string') {
+                    try {
+                        row.about_references = JSON.parse(row.about_references);
+                    } catch (e) {
+                        // If parsing fails, keep as is
+                    }
+                }
+                const displayName = [row.first_name, row.last_name].filter(Boolean).join(' ').trim() || 'Unnamed';
+                const recordPart = row.record_number != null ? `HM-${row.record_number}` : `HM #${row.hiring_manager_id}`;
+                const hiring_manager_display = `${recordPart} ${displayName}`.trim();
+                return {
+                    ...row,
+                    source_type: 'hiring_manager',
+                    source_id: row.hiring_manager_id,
+                    hiring_manager_display
+                };
+            });
+
+            // 3. Merge and sort by created_at DESC
+            const merged = [...orgNotes, ...hmNotes].sort(
+                (a, b) => new Date(b.created_at) - new Date(a.created_at)
+            );
+            return merged;
         } catch (error) {
             throw error;
         } finally {
