@@ -1,6 +1,7 @@
 // controllers/jobController.js
 const Job = require('../models/job');
 const JobSeeker = require('../models/jobseeker');
+const JobSeekerApplication = require("../models/jobSeekerApplication");
 const Document = require('../models/document');
 const EmailTemplateModel = require('../models/emailTemplateModel');
 const User = require('../models/user');
@@ -39,6 +40,7 @@ class JobController {
         this.documentModel = new Document(pool);
         this.emailTemplateModel = new EmailTemplateModel(pool);
         this.userModel = new User(pool);
+        this.applicationModel = new JobSeekerApplication(pool);
         this.create = this.create.bind(this);
         this.getAll = this.getAll.bind(this);
         this.getById = this.getById.bind(this);
@@ -48,6 +50,7 @@ class JobController {
         this.addNote = this.addNote.bind(this);
         this.getNotes = this.getNotes.bind(this);
         this.getHistory = this.getHistory.bind(this);
+        this.getApplications = this.getApplications.bind(this);
         this.exportToXML = this.exportToXML.bind(this);
 
         this.getAdditionalSkillSuggestions = this.getAdditionalSkillSuggestions.bind(this);
@@ -124,6 +127,9 @@ class JobController {
     async initTables() {
         await this.jobModel.initTable();
         await this.documentModel.initTable();
+        if (this.applicationModel?.initTable) {
+            await this.applicationModel.initTable();
+        }
     }
 
     // Create a new job
@@ -271,6 +277,42 @@ class JobController {
                 success: false,
                 message: 'An error occurred while retrieving the job',
                 error: process.env.NODE_ENV === 'production' ? undefined : error.message
+            });
+        }
+    }
+
+    /**
+     * Get all applications (submissions) for a job, across all job seekers.
+     * Backed by the job_seeker_applications table.
+     */
+    async getApplications(req, res) {
+        try {
+            const { id } = req.params;
+
+            const job = await this.jobModel.getById(id, null);
+            if (!job) {
+                return res.status(404).json({
+                    success: false,
+                    message: "Job not found",
+                });
+            }
+
+            const applications = await this.applicationModel.getByJobId(id);
+
+            return res.status(200).json({
+                success: true,
+                count: applications.length,
+                applications,
+            });
+        } catch (error) {
+            console.error("Error getting job applications:", error);
+            return res.status(500).json({
+                success: false,
+                message: "An error occurred while retrieving applications",
+                error:
+                    process.env.NODE_ENV === "production"
+                        ? undefined
+                        : error.message,
             });
         }
     }

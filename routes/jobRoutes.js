@@ -28,6 +28,9 @@ function createJobRouter(jobController, authMiddleware) {
     // (admins can see any, regular users only their own)
     router.get('/:id', jobController.getById);
 
+    // Applications (submissions) for a job – backed by job_seeker_applications table
+    router.get('/:id/applications', jobController.getApplications);
+
     // Update job by ID 
     // (admins can update any, regular users only their own)
     router.put('/:id', jobController.update);

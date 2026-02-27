@@ -84,6 +84,45 @@ class JobSeekerApplication {
   }
 
   /**
+   * Get all applications for a job (across all job seekers), ordered by created_at desc.
+   * Useful for populating the "Applied" tab on the Job record.
+   */
+  async getByJobId(jobId) {
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query(
+        `
+        SELECT a.*, u.name AS created_by_name
+        FROM job_seeker_applications a
+        LEFT JOIN users u ON a.created_by = u.id
+        WHERE a.job_id = $1
+        ORDER BY a.created_at DESC
+        `,
+        [jobId]
+      );
+      return result.rows.map((row) => ({
+        id: row.id,
+        job_seeker_id: row.job_seeker_id,
+        type: row.type,
+        job_id: row.job_id,
+        job_title: row.job_title,
+        organization_id: row.organization_id,
+        organization_name: row.organization_name,
+        client_id: row.client_id,
+        client_name: row.client_name,
+        status: row.status,
+        created_by: row.created_by,
+        created_by_name: row.created_by_name,
+        created_at: row.created_at,
+        notes: row.notes,
+        submission_source: row.submission_source,
+      }));
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
    * Create a new application. Returns the created row.
    */
   async create(data) {
