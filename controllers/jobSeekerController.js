@@ -158,19 +158,76 @@ class JobSeekerController {
         });
       }
 
+      // Resolve job + organization so organization comes from the Job's organization_id
+      // (or its denormalized organization_name), rather than relying on the request payload.
+      let resolvedJobTitle = application.job_title || "";
+      let resolvedOrganizationId =
+        application.organization_id !== undefined
+          ? application.organization_id
+          : null;
+      let resolvedOrganizationName = application.organization_name || "";
+
+      if (application.job_id) {
+        try {
+          const pool = this.jobSeekerModel.pool;
+          const client = await pool.connect();
+          try {
+            const jobResult = await client.query(
+              `
+              SELECT
+                j.job_title,
+                j.organization_id,
+                o.name AS organization_name
+              FROM jobs j
+              LEFT JOIN organizations o ON j.organization_id = o.id
+              WHERE j.id = $1
+              `,
+              [application.job_id]
+            );
+            const jobRow = jobResult.rows[0];
+            if (jobRow) {
+              if (!resolvedJobTitle) {
+                resolvedJobTitle = jobRow.job_title || "";
+              }
+              if (
+                (resolvedOrganizationId === null ||
+                  resolvedOrganizationId === undefined ||
+                  resolvedOrganizationId === "") &&
+                jobRow.organization_id
+              ) {
+                resolvedOrganizationId = jobRow.organization_id;
+              }
+              if (!resolvedOrganizationName) {
+                resolvedOrganizationName = jobRow.organization_name || "";
+              }
+            }
+          } finally {
+            // Ensure client is always released
+            // even if the query above throws.
+            await client.release();
+          }
+        } catch (err) {
+          console.error(
+            `${DEBUG_TAG} Error resolving job organization for application:`,
+            err && err.message ? err.message : err
+          );
+        }
+      }
+
       const newApplication = await this.applicationModel.create({
         job_seeker_id: parseInt(id, 10),
         type: application.type,
         job_id: application.job_id || null,
-        job_title: application.job_title || "",
-        organization_id: application.organization_id || null,
-        organization_name: application.organization_name || "",
+        job_title: resolvedJobTitle,
+        organization_id: resolvedOrganizationId,
+        organization_name: resolvedOrganizationName,
         client_id: application.client_id || null,
         client_name: application.client_name || "",
         created_by: application.created_by || userId,
         notes: application.notes || "",
         status: application.status || "",
-        submission_source: application.submission_source || application.submissionSource || "",
+        submission_source:
+          application.submission_source || application.submissionSource || "",
       });
 
       const submittedByName =
