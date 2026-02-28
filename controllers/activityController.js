@@ -5,11 +5,11 @@ class ActivityController {
   constructor(pool) {
     this.activityModel = new ActivityLog(pool);
     this.userModel = new User(pool);
-
     this.initTables = this.initTables.bind(this);
     this.logActivity = this.logActivity.bind(this);
     this.getActivities = this.getActivities.bind(this);
     this.getSummary = this.getSummary.bind(this);
+    this.getReport = this.getReport.bind(this);
   }
 
   async initTables() {
@@ -126,7 +126,6 @@ class ActivityController {
     }
   }
 
-  // GET /api/admin/activity/summary
   async getSummary(req, res) {
     try {
       const {
@@ -157,6 +156,52 @@ class ActivityController {
       return res.status(500).json({
         success: false,
         message: "Failed to fetch activity summary",
+        error: process.env.NODE_ENV === "production" ? undefined : error.message,
+      });
+    }
+  }
+
+  // GET /api/activity/report?userId=...&start=...&end=...
+  // Returns { categories: { [key]: { notesCount, addedToSystem, ... } } } for dashboard Activity Report.
+  // Uses real counts from notes tables and entity created_by/created_at.
+  async getReport(req, res) {
+    try {
+      const { userId, user_id, start, startDate, end, endDate } = req.query;
+      const resolvedUserId = userId || user_id || null;
+      const resolvedStart = start || startDate || null;
+      const resolvedEnd = end || endDate || null;
+
+      if (!resolvedUserId) {
+        return res.status(400).json({
+          success: false,
+          message: "userId is required",
+        });
+      }
+
+      const result = await this.activityModel.getReportCounts({
+        userId: resolvedUserId,
+        startDate: resolvedStart,
+        endDate: resolvedEnd,
+      });
+
+      const categories = result && result.categories ? result.categories : {
+        organizations: { notesCount: 0, addedToSystem: 0, inboundEmails: 0, outboundEmails: 0, calls: 0, texts: 0 },
+        jobs: { notesCount: 0, addedToSystem: 0, inboundEmails: 0, outboundEmails: 0, calls: 0, texts: 0 },
+        "job-seekers": { notesCount: 0, addedToSystem: 0, inboundEmails: 0, outboundEmails: 0, calls: 0, texts: 0 },
+        "hiring-managers": { notesCount: 0, addedToSystem: 0, inboundEmails: 0, outboundEmails: 0, calls: 0, texts: 0 },
+        placements: { notesCount: 0, addedToSystem: 0, inboundEmails: 0, outboundEmails: 0, calls: 0, texts: 0 },
+        leads: { notesCount: 0, addedToSystem: 0, inboundEmails: 0, outboundEmails: 0, calls: 0, texts: 0 },
+      };
+
+      return res.status(200).json({
+        success: true,
+        categories,
+      });
+    } catch (error) {
+      console.error("Error fetching activity report:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to fetch activity report",
         error: process.env.NODE_ENV === "production" ? undefined : error.message,
       });
     }

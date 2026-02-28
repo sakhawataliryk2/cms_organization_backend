@@ -219,6 +219,124 @@ class ActivityLog {
       if (client) client.release();
     }
   }
+
+  /**
+   * Get real counts for Activity Report from actual tables (notes + records added by user in date range).
+   * Returns { categories: { organizations: { notesCount, addedToSystem, ... }, jobs: ..., ... } }.
+   */
+  async getReportCounts({ userId, startDate, endDate }) {
+    if (!userId) return null;
+    let client;
+    const endDateTime = endDate ? `${endDate} 23:59:59` : null;
+    const categories = {
+      organizations: { notesCount: 0, addedToSystem: 0, inboundEmails: 0, outboundEmails: 0, calls: 0, texts: 0 },
+      jobs: { notesCount: 0, addedToSystem: 0, inboundEmails: 0, outboundEmails: 0, calls: 0, texts: 0 },
+      "job-seekers": { notesCount: 0, addedToSystem: 0, inboundEmails: 0, outboundEmails: 0, calls: 0, texts: 0 },
+      "hiring-managers": { notesCount: 0, addedToSystem: 0, inboundEmails: 0, outboundEmails: 0, calls: 0, texts: 0 },
+      placements: { notesCount: 0, addedToSystem: 0, inboundEmails: 0, outboundEmails: 0, calls: 0, texts: 0 },
+      leads: { notesCount: 0, addedToSystem: 0, inboundEmails: 0, outboundEmails: 0, calls: 0, texts: 0 },
+    };
+    const runCount = async (query, params) => {
+      const r = await client.query(query, params);
+      return parseInt(r.rows[0]?.count, 10) || 0;
+    };
+    try {
+      client = await this.pool.connect();
+      const uid = parseInt(userId, 10);
+      if (isNaN(uid)) return { categories };
+
+      const dateCond = startDate && endDateTime
+        ? ` AND created_at >= $2 AND created_at <= $3`
+        : startDate
+          ? ` AND created_at >= $2`
+          : endDateTime
+            ? ` AND created_at <= $2`
+            : "";
+      const paramsNotes = startDate && endDateTime ? [uid, startDate, endDateTime] : startDate ? [uid, startDate] : endDateTime ? [uid, endDateTime] : [uid];
+      const paramsEntities = paramsNotes;
+
+      // Organization notes & organizations created
+      try {
+        categories.organizations.notesCount = await runCount(
+          `SELECT COUNT(*) AS count FROM organization_notes WHERE created_by = $1${dateCond}`,
+          paramsNotes
+        );
+        categories.organizations.addedToSystem = await runCount(
+          `SELECT COUNT(*) AS count FROM organizations WHERE created_by = $1${dateCond}`,
+          paramsEntities
+        );
+      } catch (e) {
+        // Tables may not exist in some envs
+      }
+
+      // Job notes & jobs created
+      try {
+        categories.jobs.notesCount = await runCount(
+          `SELECT COUNT(*) AS count FROM job_notes WHERE created_by = $1${dateCond}`,
+          paramsNotes
+        );
+        categories.jobs.addedToSystem = await runCount(
+          `SELECT COUNT(*) AS count FROM jobs WHERE created_by = $1${dateCond}`,
+          paramsEntities
+        );
+      } catch (e) {}
+
+      // Job seeker notes & job seekers created
+      try {
+        categories["job-seekers"].notesCount = await runCount(
+          `SELECT COUNT(*) AS count FROM job_seeker_notes WHERE created_by = $1${dateCond}`,
+          paramsNotes
+        );
+        categories["job-seekers"].addedToSystem = await runCount(
+          `SELECT COUNT(*) AS count FROM job_seekers WHERE created_by = $1${dateCond}`,
+          paramsEntities
+        );
+      } catch (e) {}
+
+      // Hiring manager notes & hiring managers created
+      try {
+        categories["hiring-managers"].notesCount = await runCount(
+          `SELECT COUNT(*) AS count FROM hiring_manager_notes WHERE created_by = $1${dateCond}`,
+          paramsNotes
+        );
+        categories["hiring-managers"].addedToSystem = await runCount(
+          `SELECT COUNT(*) AS count FROM hiring_managers WHERE created_by = $1${dateCond}`,
+          paramsEntities
+        );
+      } catch (e) {}
+
+      // Placement notes & placements created
+      try {
+        categories.placements.notesCount = await runCount(
+          `SELECT COUNT(*) AS count FROM placement_notes WHERE created_by = $1${dateCond}`,
+          paramsNotes
+        );
+        categories.placements.addedToSystem = await runCount(
+          `SELECT COUNT(*) AS count FROM placements WHERE created_by = $1${dateCond}`,
+          paramsEntities
+        );
+      } catch (e) {}
+
+      // Lead notes & leads created
+      try {
+        categories.leads.notesCount = await runCount(
+          `SELECT COUNT(*) AS count FROM lead_notes WHERE created_by = $1${dateCond}`,
+          paramsNotes
+        );
+        categories.leads.addedToSystem = await runCount(
+          `SELECT COUNT(*) AS count FROM leads WHERE created_by = $1${dateCond}`,
+          paramsEntities
+        );
+      } catch (e) {}
+
+      return { categories };
+    } catch (error) {
+      console.error("Error fetching activity report counts:", error);
+      throw error;
+    } finally {
+      if (client) client.release();
+    }
+  }
 }
 
 module.exports = ActivityLog;

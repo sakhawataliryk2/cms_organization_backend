@@ -10,6 +10,9 @@ function createActivityRouter(activityController, authMiddleware) {
   // Public (to any authenticated user) logging endpoint
   router.post("/", activityController.logActivity);
 
+  // Activity report for dashboard (any authenticated user; typically own userId)
+  router.get("/report", activityController.getReport);
+
   // Admin-only endpoints for reading activity
   router.get(
     "/admin",
