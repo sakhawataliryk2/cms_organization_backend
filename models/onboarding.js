@@ -256,31 +256,109 @@ class Onboarding {
     }
   }
 
-  async listForJobSeeker(job_seeker_id) {
-    const client = await this.pool.connect();
-    try {
-      const r = await client.query(
-        `
-        SELECT
-          osi.id,
-          td.document_name,
-          osi.status,
-          osi.sent_at,
-          osi.completed_at
-        FROM onboarding_sends os
-        JOIN onboarding_send_items osi ON osi.onboarding_send_id = os.id
-        JOIN template_documents td ON td.id = osi.template_document_id
-        WHERE os.job_seeker_id = $1
-        ORDER BY osi.sent_at DESC
-        `,
-        [Number(job_seeker_id)]
-      );
-      return r.rows || [];
-    } finally {
-      client.release();
-    }
+async listForJobSeeker(job_seeker_id) {
+  const client = await this.pool.connect();
+  try {
+    const r = await client.query(
+      `
+      SELECT
+        osi.id,
+        td.id as template_document_id,
+        td.document_name,
+        osi.status,
+        osi.sent_at,
+        osi.completed_at,
+        td.file_url, -- Fetch the file_url from the template_documents table
+        td.file_name, -- Optionally, you can also fetch file_name if needed
+        td.mime_type, -- Fetch mime type, useful for rendering
+        json_agg(
+  json_build_object(
+    'field_name', f.field_name,
+    'field_label', f.field_label,
+    'field_type', f.field_type,
+    'x', f.x,   -- Yeh add karein
+    'y', f.y,   -- Yeh add karein
+    'w', f.w,   -- Yeh add karein
+    'h', f.h    -- Yeh add karein
+  )
+) as mapped_fields
+      FROM onboarding_sends os
+      JOIN onboarding_send_items osi ON osi.onboarding_send_id = os.id
+      JOIN template_documents td ON td.id = osi.template_document_id
+      LEFT JOIN template_document_mappings f ON f.template_document_id = td.id
+      WHERE os.job_seeker_id = $1
+      GROUP BY osi.id, td.id
+      ORDER BY osi.sent_at DESC
+      `,
+      [Number(job_seeker_id)]
+    );
+    return r.rows || []; // Return documents with mapped fields and file_url
+  } finally {
+    client.release(); // Always release the client after the query
   }
-  
+}
+async getJobseekerData(job_seeker_id, template_document_id) {
+  const client = await this.pool.connect();
+  try {
+    // 1. Pehle mappings uthain (e.g., Field_1 -> "First Name")
+    const mappingsResult = await client.query(
+      `SELECT field_name, field_label FROM template_document_mappings WHERE template_document_id = $1`,
+      [template_document_id]
+    );
+
+    // 2. Jobseeker ka poora data uthain (including custom_fields)
+    const jobseekerResult = await client.query(
+      `SELECT * FROM job_seekers WHERE id = $1`,
+      [Number(job_seeker_id)]
+    );
+
+    const js = jobseekerResult.rows[0];
+    if (!js) return {};
+
+    const mappedData = {};
+
+    // 3. Mapping loop: label match karein
+    mappingsResult.rows.forEach(mapping => {
+      const label = mapping.field_label; // e.g., "First Name" or "Address"
+      
+      // Pehle check karein agar ye standard column hai (lowercase check)
+      const standardKey = label.toLowerCase().replace(" ", "_");
+      
+      if (js[standardKey] !== undefined) {
+        mappedData[mapping.field_name] = js[standardKey];
+      } 
+      // Phir check karein custom_fields JSON ke andar
+      else if (js.custom_fields && js.custom_fields[label] !== undefined) {
+        mappedData[mapping.field_name] = js.custom_fields[label];
+      }
+      else {
+        mappedData[mapping.field_name] = ""; // Agar kuch na mile
+      }
+    });
+
+    return mappedData;
+  } finally {
+    client.release();
+  }
+}
+async getJobseekerProfile(job_seeker_id) {
+  const client = await this.pool.connect();
+  try {
+    // Fetch jobseeker data without specifying each field
+    const jobseekerResult = await client.query(
+      `SELECT * FROM job_seekers WHERE id = $1`, [Number(job_seeker_id)]
+    );
+
+    const js = jobseekerResult.rows[0];
+    if (!js) return {};
+
+    // Return the entire record as the profile data
+    return js;
+  } finally {
+    client.release();
+  }
+}
+
 
 }
 

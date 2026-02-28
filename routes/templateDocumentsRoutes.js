@@ -14,7 +14,6 @@ module.exports = (pool, authMiddleware) => {
   router.get("/", controller.getAll);
   router.get("/:id", controller.getById);
 
-  // JSON body with base64 file (same pattern as organization/jobs document upload) to avoid "unexpected end of form"
   router.post("/", express.json({ limit: "30mb" }), controller.create);
   router.put("/:id", express.json({ limit: "30mb" }), controller.update);
 

@@ -254,16 +254,85 @@ class OnboardingController {
     }
   };
 
-  // GET /api/onboarding/job-seekers/:id
-  getForJobSeeker = async (req, res, next) => {
+// GET /api/onboarding/job-seekers/:id
+async getForJobSeeker(req, res, next) {
+    let client;
     try {
-      const id = Number(req.params.id);
-      const items = await this.onboardingModel.listForJobSeeker(id);
-      return res.json({ success: true, items });
+        const jobSeekerId = req.params.id;
+        client = await this.pool.connect();
+
+        // Fetch job seeker data
+        const jsRes = await client.query(
+          `SELECT * FROM job_seekers WHERE id = $1`, [jobSeekerId]
+        );
+        const jobSeeker = jsRes.rows[0];
+
+        if (!jobSeeker) return res.status(404).json({ success: false, message: "Job seeker not found" });
+
+        // Fetch document templates and pre-fill fields
+        const templateData = await client.query(
+          `SELECT 
+            oi.id AS onboarding_item_id, 
+            oi.status, 
+            td.id AS template_id, 
+            td.document_name, 
+            td.file_url
+          FROM onboarding_items oi
+          JOIN template_documents td 
+            ON oi.template_document_id = td.id
+          WHERE oi.job_seeker_id = $1`, [jobSeekerId]
+        );
+
+        const preFilledTemplate = templateData.rows.map((field) => ({
+            ...field,
+            // Fill in mapped data from job seeker profile
+            current_value: jobSeeker[field.field_name] || "", 
+        }));
+
+        return res.json({ success: true, preFilledTemplate });
     } catch (err) {
-      next(err);
+        next(err);
+    } finally {
+        if (client) client.release();
     }
-  };
+};
+
+// SUBMIT DOCUMENT
+async submitDocument(req, res) {
+    const { job_seeker_id, document_id, submitted_fields } = req.body;
+    const client = await this.pool.connect();
+
+    const allowedFields = ['first_name', 'last_name', 'email', 'phone_number', 'current_address', 'emergency_contact_name', 'emergency_phone'];
+
+    try {
+        await client.query('BEGIN');  
+
+        // Update document status to "Completed"
+        await client.query(
+            `UPDATE onboarding_items 
+             SET status = 'Completed', completed_at = NOW() 
+             WHERE job_seeker_id = $1 AND template_document_id = $2`,
+            [job_seeker_id, document_id]
+        );
+
+        // Handle "Flow Back" logic (update job seeker data)
+        for (const field of submitted_fields) {
+            if (field.data_flow_back === true && allowedFields.includes(field.name)) {
+                const updateQuery = `UPDATE job_seekers SET ${field.name} = $1 WHERE id = $2`;
+                await client.query(updateQuery, [field.value, job_seeker_id]);
+            }
+        }
+
+        await client.query('COMMIT');
+        res.json({ success: true, message: "Profile updated successfully!" });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        res.status(500).json({ success: false, error: err.message });
+    } finally {
+        client.release();
+    }
+}
+
 }
 
 module.exports = OnboardingController;
